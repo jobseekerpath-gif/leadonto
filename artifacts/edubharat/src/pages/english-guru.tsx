@@ -828,7 +828,10 @@ function EnglishGuruContent({ embedded = false }: { embedded?: boolean }) {
   // learner can move between English and their helper language in one turn.
   // Keep the legacy label for the hook's start-message contract; the server
   // intentionally ignores it for the live multilingual path.
-  const recognitionLang = "English";
+  // Live STT must follow the learner's selected helper language. Hard-coding
+  // English here prevented native-language turns from reaching the live STT
+  // locale selected by the learner.
+  const recognitionLang = uiLang;
   const speech = useSpeechRecognition(recognitionLang, { realtime: true });
   /**
    * speechRef — always-current speech handle so handleConvPhrase doesn't need
@@ -1713,7 +1716,7 @@ Rules for spoken replies:
            // the reply when we pass the helper language; `language: "English"` keeps
            // the English runs on the tutor voice.
           speakRef.current(cleanResponse, "English", releaseTurn, {
-            rate: 1.0,
+            rate: 1.06,
             nativeLanguage: replyUsesNativeLanguage ? replyNativeLanguage : undefined,
             forceNativeLanguage: nativeInputDetected || translationRequested || isDirectLanguageRequest,
           });
@@ -1791,8 +1794,9 @@ Rules for spoken replies:
       }
       aiBusyRef.current = false;
       lastAiSpeechEndRef.current = Date.now();
-      speechRef.current.suppressUntil(Date.now() + 2500);
-      // Tightened from 650ms — matches interview-ace.tsx and real natural-pause data (~400ms median)
+      speechRef.current.suppressUntil(Date.now() + 450);
+      // Keep only a short speaker-tail guard; the microphone should become
+      // usable immediately after the greeting ends.
       speechRef.current.blockFor(0);
       speechRef.current.startContinuous(p => handleConvPhraseRef.current?.(p));
       setConvFlowState("user-speaking");
