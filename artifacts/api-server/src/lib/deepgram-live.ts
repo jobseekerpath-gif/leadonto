@@ -216,7 +216,7 @@ export function attachDeepgramLive(server: Server): void {
           sendJson(browser, { type: "error", error: "Realtime speech connection failed." });
         });
         deepgram.on("close", () => {
-          if (!closed && !sentFinal) {
+          if (!closed && !sentFinal && !multilingualRetryUsed) {
             if (latestTranscript) {
               sentFinal = true;
               sendJson(browser, { type: "final", text: latestTranscript, speechFinal: true });
