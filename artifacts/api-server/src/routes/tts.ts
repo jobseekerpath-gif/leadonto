@@ -42,7 +42,7 @@ export const CHARACTER_VOICE_MAP: Record<string, string> = {
   aryan: "en-IN-Chirp3-HD-Rasalgethi",
 };
 
-const LANGUAGE_CODES: Record<SupportedLanguage, string> = {
+const LANGUAGE_CODES: Record<SupportedLanguage, string | null> = {
   English: "en-IN",
   Hindi: "hi-IN",
   Tamil: "ta-IN",
@@ -53,11 +53,12 @@ const LANGUAGE_CODES: Record<SupportedLanguage, string> = {
   Kannada: "kn-IN",
   Malayalam: "ml-IN",
   Punjabi: "pa-IN",
-  // Google currently publishes no or-IN/as-IN voice catalog entries. These
-  // two scripts use Google's hi-IN Chirp voice as the server-side fallback
-  // rather than a silent response.
-  Odia: "hi-IN",
-  Assamese: "hi-IN",
+  // The current Google Cloud catalog does not list native Odia/Assamese
+  // voices. Never route these languages through Hindi because that produces
+  // the wrong language/accent. The browser voice fallback uses the requested
+  // locale when a device provides it.
+  Odia: null,
+  Assamese: null,
   Urdu: "ur-IN",
 };
 
@@ -133,6 +134,9 @@ async function chooseVoice(
   }
 
   const requestedCode = LANGUAGE_CODES[language];
+  if (!requestedCode) {
+    throw new Error(`No native Google Cloud TTS voice is available for ${language}`);
+  }
   const cacheKey = `${requestedCode}:${gender ?? "any"}:${voiceStyle ?? "default"}`;
   const cached = nativeVoiceCache.get(cacheKey);
   if (cached) return cached;
@@ -142,7 +146,12 @@ async function chooseVoice(
   const catalogVoices = (catalog.voices ?? [])
     .filter((voice) => voice.name && voice.languageCodes?.includes(requestedCode))
     .sort((a, b) => {
-      const quality = (name: string) => name.includes("Wavenet") ? 0 : name.includes("Neural2") ? 1 : 2;
+      const quality = (name: string) =>
+        name.includes("Chirp3-HD") ? 0
+          : name.includes("Wavenet") ? 1
+            : name.includes("Neural2") ? 2
+              : name.includes("Standard") ? 3
+                : 4;
       return quality(a.name ?? "") - quality(b.name ?? "") || (a.name ?? "").localeCompare(b.name ?? "");
     });
   const requestedGender = gender === "female" ? "FEMALE" : gender === "male" ? "MALE" : undefined;
@@ -163,7 +172,7 @@ async function chooseVoice(
     (voiceStyle ?? "maya") as (typeof CHARACTER_ORDER)[number],
   );
   const selected = fallbackCatalog[Math.max(0, index) % fallbackCatalog.length]!;
-  const selection = { languageCode: fallbackCode, name: selected.name! };
+  const selection = { languageCode: requestedCode, name: selected.name! };
   nativeVoiceCache.set(cacheKey, selection);
   return selection;
 }
