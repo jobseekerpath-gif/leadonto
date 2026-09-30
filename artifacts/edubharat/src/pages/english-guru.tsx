@@ -41,9 +41,9 @@ const TUTOR_SPEAKING_STYLES: Record<string, string> = {
   neha: 'Speak like a patient Kolkata pronunciation teacher. Slow down for demonstrations, break words into syllables, and say "now repeat after me" or "stress the second syllable".',
   rahul: 'Speak like a methodical Pune grammar teacher. Explain rules step by step with Indian examples about chai, cricket, and festivals. Say "the rule here is" and "a common mistake Indians make is".',
 };
-// Calm, teacher-like delivery. Keep the live turn timing unchanged; only the
-// audio itself is slower and easier to follow.
-const ENGLISH_GURU_SPEECH_RATE = 0.94;
+// Brisk but natural classroom pace. Fast enough to feel responsive without
+// sounding rushed; the live turn timing is unchanged.
+const ENGLISH_GURU_SPEECH_RATE = 1.08;
 const LIVE_OPENINGS = [
   (name: string) => `Hi ${name}! I’m happy you’re here. How are you feeling today?`,
   (name: string) => `Hey ${name}! Let’s make this easy and useful. What are you working on today?`,
@@ -1237,15 +1237,9 @@ function EnglishGuruContent({ embedded = false }: { embedded?: boolean }) {
       }
     }
     if (isSilenceProbe && (aiBusyRef.current || !liveChatRef.current)) return;
-    // A stopped Web Speech instance can still deliver one buffered final result
-    // after the AI audio ends. Do not let that result become a new turn while
-    // room echo is decaying, even when it was transcribed into native script
-    // and therefore cannot match the English-text echo guard below.
-    if (
-      !isSilenceProbe
-      && liveChatRef.current
-      && Date.now() - lastAiSpeechEndRef.current < 2800
-    ) return;
+    // Re-open the conversation immediately after the teacher finishes. We rely
+    // on the content-based echo guard below instead of a fixed multi-second
+    // dead zone, so a learner can naturally interrupt/respond right away.
     // Echo guard: a phrase arriving within ~3.5s of the AI finishing, that closely
     // matches what the AI just said, is the mic hearing the speaker — not the user.
     // Drop it so the teacher never "replies to its own voice".
@@ -1650,16 +1644,12 @@ Rules for spoken replies:
           if (speakSafetyTimerRef.current) { clearTimeout(speakSafetyTimerRef.current); speakSafetyTimerRef.current = null; }
           aiBusyRef.current = false;
           if (liveChatRef.current) {
-            // Pre-warm: spawn the mic 500ms after TTS ends so the recognizer is
-            // already hot and calibrated by the time the student speaks — but
-            // suppress results for 2s (from TTS end) so room echo of the AI's
-            // voice on laptop/phone speakers is never passed to handleConvPhrase.
-            // The content-based echo guard (6s, 85% overlap) is an additional
-            // backstop for devices with slow echo decay.
+            // Open the mic as soon as the final audio callback fires. Keep only
+            // a tiny 450ms suppression window for decoder/speaker-tail noise;
+            // substantive echoes are filtered by the content guard in the phrase handler.
             lastAiSpeechEndRef.current = Date.now();
-             speechRef.current.suppressUntil(Date.now() + 2500);
-             // Tightened from 650ms — matches interview-ace.tsx and real natural-pause data (~400ms median)
-             speechRef.current.blockFor(0);
+            speechRef.current.suppressUntil(Date.now() + 450);
+            speechRef.current.blockFor(0);
              // Re-arm the single recognition loop immediately. blockFor()
              // handles the short speaker-tail delay and prevents duplicate
              // recorders; do not wait for a React effect to notice the state.
