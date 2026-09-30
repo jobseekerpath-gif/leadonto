@@ -151,6 +151,55 @@ type QueuedSpeech = {
 type SpeechChunk = { text: string; language: string };
 const _speechQueue: QueuedSpeech[] = [];
 let _queueActive = false;
+
+// One-sentence look-ahead cache. The next sentence is synthesized while the
+// current sentence is playing, removing the network round-trip from the full
+// stop -> next sentence transition.
+type TtsFetchResult = { blob: Blob | null; status: number };
+const _ttsPrefetch = new Map<string, Promise<TtsFetchResult>>();
+function ttsPrefetchKey(generation: number, index: number): string {
+  return generation + ":" + index;
+}
+function requestTtsAudio(
+  text: string,
+  language: string,
+  gender: "male" | "female",
+  options: GoogleSpeakOptions,
+  signal?: AbortSignal,
+): Promise<TtsFetchResult> {
+  return fetch(BASE + "/api/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      text, language, gender,
+      voiceStyle: options.voiceStyle, nativeLanguage: options.nativeLanguage,
+    }),
+    signal,
+  }).then(async (res) => ({
+    status: res.status,
+    blob: res.ok ? await res.blob() : null,
+  }));
+}
+function ensureTtsPrefetch(
+  chunks: SpeechChunk[],
+  index: number,
+  generation: number,
+  gender: "male" | "female",
+  options: GoogleSpeakOptions,
+): Promise<TtsFetchResult> | null {
+  if (index >= chunks.length || generation !== _speakGen) return null;
+  const key = ttsPrefetchKey(generation, index);
+  const existing = _ttsPrefetch.get(key);
+  if (existing) return existing;
+  const chunk = chunks[index]!;
+  const promise = requestTtsAudio(chunk.text, chunk.language, gender, options).catch(() => ({
+    status: 0,
+    blob: null,
+  }));
+  _ttsPrefetch.set(key, promise);
+  return promise;
+}
 // Hook instances register here to be notified when global stop happens
 // so they can reset their own isSpeaking state.
 const _stopListeners = new Set<() => void>();
@@ -378,6 +427,7 @@ function globalStop() {
   _speakGen++; // supersede any in-flight chunk chain — it will see the mismatch and quietly stop
   _speechQueue.length = 0;
   _queueActive = false;
+  _ttsPrefetch.clear();
   _abort?.abort();
   _abort = null;
   const browserUtterance = _browserUtterance;
@@ -509,7 +559,7 @@ function playChunkChain(
   onAllDone: () => void,
   attempt = 0,
 ): void {
-  if (myGen !== _speakGen) return; // superseded before this chunk even started
+  if (myGen !== _speakGen) return;
   if (index >= chunks.length) { onAllDone(); return; }
 
   const chunk = chunks[index]!;
@@ -517,8 +567,8 @@ function playChunkChain(
   const language = chunk.language;
   const ctrl = new AbortController();
   _abort = ctrl;
-  // Per-chunk hang guard — chunks are short, so 12s is already generous.
   const hangTimer = setTimeout(() => { if (_abort === ctrl) ctrl.abort(); }, 12_000);
+
   const next = () => playChunkChain(chunks, index + 1, myGen, gender, options, onAllDone);
   const useFallbackThenNext = () => {
     if (myGen !== _speakGen) return;
@@ -527,6 +577,7 @@ function playChunkChain(
   };
   const retry = () => {
     if (attempt >= 1) return false;
+    _ttsPrefetch.delete(ttsPrefetchKey(myGen, index));
     setTimeout(
       () => playChunkChain(chunks, index, myGen, gender, options, onAllDone, attempt + 1),
       40,
@@ -534,24 +585,24 @@ function playChunkChain(
     return true;
   };
 
-  fetch(`${BASE}/api/tts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({
-      text: chunkText, language, gender,
-      voiceStyle: options.voiceStyle, nativeLanguage: options.nativeLanguage,
-    }),
-    signal: ctrl.signal,
-  })
-    .then(async (res) => {
+  // Start the current sentence and the next sentence together. The current
+  // sentence keeps its abortable watchdog; the look-ahead request is allowed
+  // to finish in the background so full stops no longer trigger another wait.
+  const currentKey = ttsPrefetchKey(myGen, index);
+  const currentPromise = _ttsPrefetch.get(currentKey)
+    ?? requestTtsAudio(chunkText, language, gender, options, ctrl.signal);
+  if (!_ttsPrefetch.has(currentKey)) _ttsPrefetch.set(currentKey, currentPromise);
+  if (index + 1 < chunks.length) {
+    ensureTtsPrefetch(chunks, index + 1, myGen, gender, options);
+  }
+
+  currentPromise
+    .then(async ({ status, blob }) => {
       clearTimeout(hangTimer);
+      _ttsPrefetch.delete(currentKey);
       if (myGen !== _speakGen) return;
-      if (!res.ok || ctrl.signal.aborted) {
-        // A rate-limited retry would immediately consume another rejected
-        // request from the same window. Speak through the local browser voice
-        // instead so the learner still hears the turn and the mic is released.
-        if (!ctrl.signal.aborted && res.status === 429) {
+      if (!blob) {
+        if (status === 429) {
           console.warn("[TTS] server rate limited; using browser voice fallback");
           useFallbackThenNext();
           return;
@@ -560,9 +611,6 @@ function playChunkChain(
         useFallbackThenNext();
         return;
       }
-
-      const blob = await res.blob();
-      if (myGen !== _speakGen) return;
       if (blob.size < 512) {
         console.warn("[TTS] audio blob too small (%d bytes) — skipping chunk", blob.size);
         if (retry()) return;
@@ -572,9 +620,6 @@ function playChunkChain(
 
       const url = URL.createObjectURL(blob);
       _url = url;
-
-      // Prefer the pre-blessed element from unlockAudio() for the very first
-      // chunk of the very first utterance; every later chunk gets a fresh one.
       let audio: HTMLAudioElement;
       if (_unlockedEl) {
         audio = _unlockedEl;
@@ -584,27 +629,20 @@ function playChunkChain(
       }
       audio.src = url;
       _audio = audio;
-      // The first real utterance may reuse the muted autoplay probe.
       audio.muted = false;
       audio.volume = 1;
 
-      // Keep all AI voices calm by default. Product-specific callers can use
-      // an even slower cap, but should not make teachers/interviewers sound
-      // rushed unless they explicitly opt into it.
       const rate = options.rate ?? 1.05;
       if (rate !== 1.0) audio.playbackRate = Math.max(0.8, Math.min(rate, 2.0));
 
-      // Decode for lip-sync IN PARALLEL with playback starting below — this
-      // never blocks or touches the playback graph, so it can't affect the
-      // autoplay unlock. If it fails for any reason, envelope stays null and
-      // the mouth simply doesn't animate for this chunk (playback is fine).
       let envelope: Envelope | null = null;
       void computeEnvelope(blob).then((env) => { envelope = env; });
 
       const tick = () => {
-        // Stop the instant this chunk is no longer the live one — natural
-        // end, error, or a newer speak()/stop() — and leave the mouth closed.
-        if (myGen !== _speakGen || _audio !== audio) { publishMouthLevel(CLOSED_MOUTH); return; }
+        if (myGen !== _speakGen || _audio !== audio) {
+          publishMouthLevel(CLOSED_MOUTH);
+          return;
+        }
         if (!audio.paused && envelope) {
           const idx = audio.currentTime / envelope.hop;
           const i0 = Math.max(0, Math.floor(idx));
@@ -625,9 +663,18 @@ function playChunkChain(
         if (_url === url) _url = null;
         if (_audio === audio) _audio = null;
         publishMouthLevel(CLOSED_MOUTH);
-        if (myGen !== _speakGen) return; // superseded — do not continue the chain
+        if (myGen !== _speakGen) return;
         if (index + 1 < chunks.length) {
-          setTimeout(next, CHUNK_GAP_MS);
+          const nextReady = _ttsPrefetch.get(ttsPrefetchKey(myGen, index + 1));
+          if (nextReady) {
+            // The promise usually has already resolved while the current
+            // sentence played; resolve immediately when possible.
+            nextReady.then(() => {
+              if (myGen === _speakGen) next();
+            });
+          } else {
+            setTimeout(next, CHUNK_GAP_MS);
+          }
         } else {
           onAllDone();
         }
@@ -648,19 +695,18 @@ function playChunkChain(
         await audio.play();
         console.info("[voice-latency] audio-playback-start");
       } catch (playErr) {
-        // NotAllowedError = autoplay policy still blocking despite unlock.
         console.warn("[TTS] audio.play() blocked; trying browser voice fallback:", playErr);
         failed();
       }
     })
     .catch(() => {
       clearTimeout(hangTimer);
+      _ttsPrefetch.delete(currentKey);
       if (myGen !== _speakGen) return;
       if (retry()) return;
       useFallbackThenNext();
     });
 }
-
 export function useGoogleTTS() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   // Track whether THIS instance is the active speaker so only it fires onEnd
