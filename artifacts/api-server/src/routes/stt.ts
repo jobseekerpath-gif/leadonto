@@ -68,7 +68,11 @@ async function transcribeWithGoogleCloud(
   mimeType: string,
   language: string,
 ): Promise<string> {
-  const encoding = mimeType.includes("ogg") ? "OGG_OPUS" : "WEBM_OPUS";
+  const encoding = mimeType.includes("ogg")
+    ? "OGG_OPUS"
+    : mimeType.includes("mp4")
+      ? "MP4_AAC"
+      : "WEBM_OPUS";
   const [response] = await getGoogleSpeechClient().recognize({
     audio: { content: buffer.toString("base64") },
     config: {
@@ -96,7 +100,7 @@ async function transcribeWithGoogleCloud(
       // Preserve word boundaries and improve clarity for names, tools, and
       // interview terminology without changing the authoritative server STT
       // path or reintroducing browser SpeechRecognition.
-      useEnhanced: true,
+      useEnhanced: language === "English",
     },
   }, {});
   const transcript = (response.results ?? [])
