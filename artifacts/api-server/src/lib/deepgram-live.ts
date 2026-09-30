@@ -45,6 +45,7 @@ export function attachDeepgramLive(server: Server): void {
     let closed = false;
     let sentFinal = false;
     let latestTranscript = "";
+    let multilingualRetryUsed = false;
     const pendingAudio: Buffer[] = [];
 
     const closeBoth = () => {
@@ -65,12 +66,27 @@ export function attachDeepgramLive(server: Server): void {
         }
         if (!isStartMessage(message) || started) return;
         started = true;
+        const requestedLanguage = message.language ?? "English";
+        const languageCode: Record<string, string> = {
+          English: "en-IN",
+          Hindi: "hi",
+          Tamil: "ta",
+          Telugu: "te",
+          Bengali: "bn",
+          Marathi: "mr",
+          Gujarati: "gu",
+          Kannada: "kn",
+          Malayalam: "ml",
+          Punjabi: "pa",
+          Odia: "or",
+          Assamese: "as",
+          Urdu: "ur",
+        };
         const params = new URLSearchParams({
           model: "nova-3",
-          // Live practice intentionally allows English/native-language
-          // code-switching. A fixed en-IN model turns a Hindi sentence into
-          // phonetic English gibberish before the AI ever sees it.
-          language: "multi",
+          // Prefer the learner-selected language for deterministic live STT.
+          // English gets a single multilingual retry for genuine code-switching.
+          language: languageCode[requestedLanguage] ?? "en-IN",
           interim_results: "true",
           smart_format: "true",
           punctuate: "true",
@@ -136,14 +152,68 @@ export function attachDeepgramLive(server: Server): void {
           }
         });
         deepgram.on("error", () => {
-          if (!sentFinal) {
-            if (latestTranscript) {
-              sentFinal = true;
-              sendJson(browser, { type: "final", text: latestTranscript, speechFinal: true });
-            } else {
-              sendJson(browser, { type: "error", error: "Realtime speech connection failed." });
-            }
+          if (sentFinal) return;
+          if (latestTranscript) {
+            sentFinal = true;
+            sendJson(browser, { type: "final", text: latestTranscript, speechFinal: true });
+            return;
           }
+          if (!multilingualRetryUsed && requestedLanguage === "English") {
+            multilingualRetryUsed = true;
+            try { deepgram?.close(); } catch {}
+            deepgram = new WebSocket(
+              "wss://api.deepgram.com/v1/listen?" + new URLSearchParams({
+                model: "nova-3",
+                language: "multi",
+                interim_results: "true",
+                smart_format: "true",
+                punctuate: "true",
+                endpointing: "100",
+                utterance_end_ms: "1000",
+                vad_events: "true",
+                filler_words: "true",
+                numerals: "true",
+                ...(mimeType.includes("webm") ? { container: "webm" } : {}),
+                ...(mimeType.includes("mp4") ? { container: "mp4" } : {}),
+              }).toString(),
+              { headers: { Authorization: "Token " + apiKey } },
+            );
+            deepgram.on("open", () => {
+              sendJson(browser, { type: "ready" });
+              for (const chunk of pendingAudio) deepgram?.send(chunk);
+              pendingAudio.length = 0;
+            });
+            deepgram.on("message", (providerRaw) => {
+              try {
+                const data = JSON.parse(providerRaw.toString()) as {
+                  type?: string;
+                  is_final?: boolean;
+                  speech_final?: boolean;
+                  channel?: { alternatives?: Array<{ transcript?: string }> };
+                };
+                const transcript = data.channel?.alternatives?.[0]?.transcript?.trim() ?? "";
+                if (transcript) latestTranscript = transcript;
+                if (data.type === "UtteranceEnd" && latestTranscript && !sentFinal) {
+                  sentFinal = true;
+                  sendJson(browser, { type: "final", text: latestTranscript, speechFinal: true });
+                } else if (transcript) {
+                  sendJson(browser, {
+                    type: data.speech_final ? "final" : "interim",
+                    text: transcript,
+                    speechFinal: Boolean(data.speech_final),
+                  });
+                }
+              } catch {}
+            });
+            deepgram.on("close", () => {
+              if (!closed && !sentFinal && latestTranscript) {
+                sentFinal = true;
+                sendJson(browser, { type: "final", text: latestTranscript, speechFinal: true });
+              }
+            });
+            return;
+          }
+          sendJson(browser, { type: "error", error: "Realtime speech connection failed." });
         });
         deepgram.on("close", () => {
           if (!closed && !sentFinal) {
