@@ -1090,7 +1090,7 @@ Keep every task specific, time-boxed, and India-relevant (job interviews, office
                           </p>
                         ) : (
                           <p className="text-xs text-muted-foreground">
-                            Lessons for {lvl} — {stageDef?.label} are coming soon
+                            No lessons are currently available for {lvl} — {stageDef?.label}.
                           </p>
                         )}
                       </div>
