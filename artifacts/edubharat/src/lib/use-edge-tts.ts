@@ -347,20 +347,23 @@ function splitIntoSpeechChunks(
 ): SpeechChunk[] {
   const clean = text.trim();
   if (!clean) return [];
-  const scriptCharacters = [...clean].filter((char) => /[\p{L}\p{M}]/u.test(char));
-  const nativeCharacters = nativeLanguage
-    ? scriptCharacters.filter(
-        (char) => languageForCharacter(char, nativeLanguage, baseLanguage) === nativeLanguage,
-      ).length
-    : 0;
-  const nativeRatio = nativeCharacters / Math.max(1, scriptCharacters.length);
-  const language = nativeLanguage
-    && nativeLanguage !== baseLanguage
-    && (forceNativeLanguage || nativeRatio >= 0.25)
-    ? nativeLanguage
-    : baseLanguage;
-
-  return splitSentenceChunks(clean).map((sentence) => ({ text: sentence, language }));
+  return splitSentenceChunks(clean).map((sentence) => {
+    // Select the voice per sentence, not for the whole reply. A native-language
+    // explanation followed by an English practice sentence must switch voices
+    // cleanly instead of reading the English sentence in a native accent.
+    if (!nativeLanguage || nativeLanguage === baseLanguage) {
+      return { text: sentence, language: baseLanguage };
+    }
+    const letters = [...sentence].filter((char) => /[\p{L}\p{M}]/u.test(char));
+    const nativeCharacters = letters.filter(
+      (char) => languageForCharacter(char, nativeLanguage, baseLanguage) === nativeLanguage,
+    ).length;
+    const nativeRatio = nativeCharacters / Math.max(1, letters.length);
+    const hasNativeScript = nativeCharacters >= 2;
+    const useNative = hasNativeScript
+      && (forceNativeLanguage || nativeRatio >= 0.15);
+    return { text: sentence, language: useNative ? nativeLanguage : baseLanguage };
+  });
 }
 
 // Small natural gap between chunks — real speech has a breath/beat at full
@@ -368,7 +371,7 @@ function splitIntoSpeechChunks(
 // sounds like separate thoughts rather than one flowing reply.
 // Keep a small human breath between sentence clips. Ten milliseconds made
 // Indic full stops sound clipped; this is still much faster than a real pause.
-const CHUNK_GAP_MS = 90;
+const CHUNK_GAP_MS = 25;
 
 
 function globalStop() {
