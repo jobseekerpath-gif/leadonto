@@ -84,14 +84,17 @@ export function attachDeepgramLive(server: Server): void {
         };
         const params = new URLSearchParams({
           model: "nova-3",
-          // Prefer the learner-selected language for deterministic live STT.
-          // English gets a single multilingual retry for genuine code-switching.
-          language: languageCode[requestedLanguage] ?? "en-IN",
+          // Hindi learners commonly switch naturally between Hindi and English.
+          // Use Nova-3 multilingual decoding for that selected helper language;
+          // keep other languages locale-specific for better script accuracy.
+          language: requestedLanguage === "Hindi"
+            ? "multi"
+            : languageCode[requestedLanguage] ?? "en-IN",
           interim_results: "true",
           smart_format: "true",
           punctuate: "true",
           endpointing: "100",
-          utterance_end_ms: "1000",
+          utterance_end_ms: "700",
           vad_events: "true",
           filler_words: "true",
           numerals: "true",
@@ -169,7 +172,7 @@ export function attachDeepgramLive(server: Server): void {
                 smart_format: "true",
                 punctuate: "true",
                 endpointing: "100",
-                utterance_end_ms: "1000",
+                utterance_end_ms: "700",
                 vad_events: "true",
                 filler_words: "true",
                 numerals: "true",
