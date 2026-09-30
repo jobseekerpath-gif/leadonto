@@ -34,12 +34,12 @@ import { useGamification } from "@/lib/use-gamification";
 import { wordOfTheDay, type WordPowerEntry } from "@/lib/word-power";
 
 const TUTOR_SPEAKING_STYLES: Record<string, string> = {
-  priya: "Warm, patient and encouraging. Use clear everyday English with natural Indian context when useful. Never force catchphrases or regional slang.",
-  rohit: "Direct and practical. Give crisp corrections and workplace examples without sounding like a scripted trainer. Never force corporate buzzwords.",
-  maya: "Polished and thoughtful. Use precise explanations and realistic business examples, but keep the conversation relaxed and human.",
-  arjun: "Energetic and upbeat. Keep momentum high with short reactions and practical examples, without hype, slogans or repeated encouragement.",
-  neha: "Patient and pronunciation-focused. Model difficult sounds clearly and naturally; vary explanations instead of repeating the same practice instruction.",
-  rahul: "Methodical and clear. Explain grammar with concise examples and useful corrections, without sounding like a textbook or repeating stock phrases.",
+  priya: 'Speak like a warm Mumbai schoolteacher. Use simple words, lots of encouragement, and occasional natural words like "haan", "bilkul", or "thoda practice karo". Never use jargon.',
+  rohit: 'Speak like a no-nonsense Delhi corporate trainer. Be direct and structured. Use phrases like "listen carefully" and "this is what HR expects". Keep it efficient and avoid fluff.',
+  maya: "Speak like a senior Bengaluru business consultant. Be precise and polished, with examples from Indian MNC culture, client calls, and boardroom communication.",
+  arjun: 'Speak like an energetic Hyderabad interview coach. Be fast-paced and positive. Use phrases like "absolutely nail it", "practice this 10 times", and "you\'ve got this yaar".',
+  neha: 'Speak like a patient Kolkata pronunciation teacher. Slow down for demonstrations, break words into syllables, and say "now repeat after me" or "stress the second syllable".',
+  rahul: 'Speak like a methodical Pune grammar teacher. Explain rules step by step with Indian examples about chai, cricket, and festivals. Say "the rule here is" and "a common mistake Indians make is".',
 };
 // Brisk but natural classroom pace. Fast enough to feel responsive without
 // sounding rushed; the live turn timing is unchanged.
@@ -828,10 +828,7 @@ function EnglishGuruContent({ embedded = false }: { embedded?: boolean }) {
   // learner can move between English and their helper language in one turn.
   // Keep the legacy label for the hook's start-message contract; the server
   // intentionally ignores it for the live multilingual path.
-  // Live STT must follow the learner's selected helper language. Hard-coding
-  // English here prevented native-language turns from reaching the live STT
-  // locale selected by the learner.
-  const recognitionLang = uiLang;
+  const recognitionLang = "English";
   const speech = useSpeechRecognition(recognitionLang, { realtime: true });
   /**
    * speechRef — always-current speech handle so handleConvPhrase doesn't need
@@ -1529,7 +1526,7 @@ Rules for spoken replies:
 - NEVER start your reply with your name or any label like "Teacher:".
 - Prefer pronounceable spoken forms for acronyms and workplace terms. Say "A I", "H R", "R B I", or "business to business" rather than rushing compressed letter strings.
 - Always finish your thought — never cut off mid-sentence.
-- For news, sports, films, prices, or other current facts, use the supplied web context when available. If it is absent or insufficient, say that the latest detail could not be verified rather than guessing or presenting stale information as current.${webContextNote}${translationInstruction}${explicitTranslationDirective}`,
+- If asked about news, sports, films, prices, or current events: answer confidently using "from what I know" or "last I heard". Do NOT say you have no internet. Your knowledge is up to early 2025; for very recent things, say "I may not have the very latest, but…".${webContextNote}${translationInstruction}${explicitTranslationDirective}`,
           undefined,
             {
               endpoint: "/api/ai/conversation",
@@ -1716,7 +1713,7 @@ Rules for spoken replies:
            // the reply when we pass the helper language; `language: "English"` keeps
            // the English runs on the tutor voice.
           speakRef.current(cleanResponse, "English", releaseTurn, {
-            rate: 1.06,
+            rate: 1.0,
             nativeLanguage: replyUsesNativeLanguage ? replyNativeLanguage : undefined,
             forceNativeLanguage: nativeInputDetected || translationRequested || isDirectLanguageRequest,
           });
@@ -1779,12 +1776,7 @@ Rules for spoken replies:
       ? "there"
       : profile.name?.trim().split(/\s+/)[0] || "there";
     const opening = LIVE_OPENINGS[Math.floor(Math.random() * LIVE_OPENINGS.length)]!(firstName);
-    const englishGreeting = `${opening} I’m ${tutor.name.replace(/\s+(Ma\'am|Sir)$/i, "")}.`;
-    // Start in the selected helper language so local-language support is audible
-    // immediately, then return to English practice during the conversation.
-    const greeting = uiLang !== "English"
-      ? NATIVE_LANGUAGE_CONFIRMATIONS[uiLang]?.[tutor.voiceGender] ?? englishGreeting
-      : englishGreeting;
+      const greeting = `${opening} I’m ${tutor.name.replace(/\s+(Ma'am|Sir)$/i, "")}.`;
     aiBusyRef.current = true;
     speechRef.current.pause();
     lastAiSpeechRef.current = greeting;
@@ -1799,9 +1791,8 @@ Rules for spoken replies:
       }
       aiBusyRef.current = false;
       lastAiSpeechEndRef.current = Date.now();
-      speechRef.current.suppressUntil(Date.now() + 450);
-      // Keep only a short speaker-tail guard; the microphone should become
-      // usable immediately after the greeting ends.
+      speechRef.current.suppressUntil(Date.now() + 2500);
+      // Tightened from 650ms — matches interview-ace.tsx and real natural-pause data (~400ms median)
       speechRef.current.blockFor(0);
       speechRef.current.startContinuous(p => handleConvPhraseRef.current?.(p));
       setConvFlowState("user-speaking");
@@ -1811,7 +1802,7 @@ Rules for spoken replies:
       releaseGreeting,
       Math.max(greeting.length * 60 + 4000, 10_000),
     );
-    synth.speak(greeting, uiLang, releaseGreeting, {
+    synth.speak(greeting, "English", releaseGreeting, {
       voiceGender: tutor.voiceGender,
       voiceStyle: tutor.voiceStyle,
       rate: ENGLISH_GURU_SPEECH_RATE,
@@ -1821,7 +1812,6 @@ Rules for spoken replies:
     tutor.name,
     tutor.voiceGender,
     tutor.voiceStyle,
-    uiLang,
     synth,
   ]);
 
