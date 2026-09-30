@@ -1,0 +1,109 @@
+---
+name: Interview Ace — weighted scorecard coverage, 2-attempt rule & warm tone
+description: Mock interviews use a weighted NINE-competency BFSI scorecard (every parameter assessed every interview — no length-gating), start with role motivation and practical job scenarios before breadth-first coverage, use a warm-professional register and 2-attempt rule, and adapt question English to the candidate.
+---
+
+# Weighted nine-competency BFSI scorecard (NO length-gating) — the framework
+Mock interviews follow a real BFSI hiring assessment scorecard: NINE weighted competencies, each rated 1–5 — Functional Knowledge 25% (the core), Communication Skills 15%, Problem-Solving & Analytical 12%, Adaptability & Learning Agility 10%, Ownership & Work Ethic 10%, Collaboration & Cultural Fit 10%, Personality & Disposition 8%, Educational Background 5%, IT Skills 5% (weights sum to 1.0). EVERY competency is scored in EVERY interview — `coveredCompetencies()` returns all nine regardless of duration (all `minMinutes: 0` in `lib/interview-format.ts`). Duration changes DEPTH (how many questions get asked), NOT which parameters are scored. Communication is judged from HOW every answer is delivered (no dedicated question stage); Personality & Disposition is likewise delivery-judged BUT also gets warm one-time opening beats (hobbies ×2, plus motivation-for-the-role and strengths/best-fit-role); Educational Background is covered by the opening question.
+**Why:** the user pasted this exact BFSI rubric and explicitly demanded the interview "cover ALL the parameters" and give complete feedback accordingly. This REVERSES the earlier length-gating decision (which caused their complaint: a 10-min interview scored functional/domain only). There is no `depthProbe` competency anymore.
+
+# Role-specific question generation — selected role is authoritative
+Live question generation must use separate role frameworks, not one generic interview template. Sales Executive focuses on prospecting, lead generation, discovery, pitching, objections, negotiation, closing, targets, follow-up, CRM and persuasion; Sales Manager focuses on leadership, coaching, pipeline, forecasting, performance and strategy; Operations Executive focuses on process, accuracy, coordination, SLAs/KPIs and operational problem-solving; Customer Service focuses on listening, diagnosis, resolution, escalation, follow-up, CRM and service quality.
+**Why:** a generic or banking-shaped question can falsely test experience the candidate never claimed, especially when a role label such as Sales Executive is selected.
+**How to apply:** keep candidate-provided experience, job-required experience and assumptions explicitly separate. The selected industry or job description may add domain context, but must not turn a requirement into evidence that the candidate has that background. Use the candidate's chosen experience only as a calibration lens, and ask a neutral evidence-seeking question when profile/history does not confirm an assumption. Reject any generated question that is not relevant to the selected role, industry and experience level; role-aware fallback banks must follow the same rule.
+
+# Diversify across ALL competencies — breadth-first rotation; don't drill one topic; don't pivot randomly
+Live questions follow a deterministic beat rotation (`areaForBeat(index, ctx)`): beat 0 = Introduction & Educational Background; beats 1–4 bring useful job signal early — 1 Motivation for the Role, 2 Role Fundamentals, 3 a realistic Role Scenario, and 4 Role Tools & Organisation; beat 5+ = `questionRotation()[(index-5) % len]` interleaving Functional Knowledge (the recurring core — NEVER back-to-back, ~1 in 3) with Problem-Solving, Ownership, Adaptability, Collaboration, IT Skills and a forward-looking Technology & AI Awareness beat (rotation slot `"aiImpact"`, placed 2nd in the rotation so it's reached EARLY in every interview and recurs once per cycle; label "Technology & AI Awareness", role-aware focus on how AI/automation reshapes the role now and near-future, but scored under Adaptability). Exactly one beat advances per answered question; the cycle repeats until time runs out, so longer interviews reach more areas and probe deeper.
+**Why:** reconciles the user's complaints — rejected random "pivot naturally" pivoting AND a "unidirectional chain about functional knowledge only." The resolution is STRUCTURED BREADTH: deterministic coverage across the whole scorecard, interleaved so consecutive questions differ and Functional never repeats adjacently (except the intentional 2-attempt retry, which re-probes the SAME area once).
+**How to apply:** `areaForBeat` REQUIRES a ctx object `{ durationMin, experience, type, roleLabel }` (keep the call site passing full ctx even though durationMin/experience are no longer read inside it). Functional stays role-specific via `functionalKnowledgeFor(type, roleLabel)` (Banking/Insurance mirror the client sheet: Retail Assets & Liabilities / KYC / Underwriting; Risk & Insurance / retail products / channels / KYC). Do NOT collapse the rotation to "one stage at a time." Warm-up beats (1–4) carry `kind:"warmup"`; `submitCurrentAnswer` gives them a gentler "keep the conversation warm and flowing" directive instead of the "move to a DIFFERENT area" framing, so the hobbies follow-up isn't pushed away as a topic switch. Only `interview-ace.tsx` imports this module.
+
+# 2-attempt rule (don't dwell on an unanswered question)
+If a candidate can't answer (explicit "I don't know" / skip phrasing, or a very short answer), give ONE gentle retry on the SAME area (rephrase / hint / example), then move on to a NEW area — never ask the same question a third time.
+**Why:** the user asked for exactly this; drilling an unanswerable question felt punishing.
+**How to apply:** `retryRef` counts retries on the current beat; a weak answer with `retryRef < 1` re-asks the same beat, otherwise it advances and resets to 0. Commit `beatIdxRef`/`retryRef` ONLY after a valid question is produced (after the deliberate think-pause and the `endingRef`/`phaseRef` re-check) so an aborted/errored/ended turn never skips an area or mis-counts a retry. Reset both refs to 0 when a session starts.
+
+# Warm, personable tone with WITTY humour actively encouraged (tone evolved twice)
+The interviewer is warm, personable and human, and should ACTIVELY use light, witty humour — a friendly quip, playful aside or clever observation — to build rapport and relax the candidate (stronger than the earlier "may use it"). Guardrails: never sarcastic, never at the candidate's expense, don't force a joke into every turn, and never so much it undercuts a real interview. Acknowledgements stay short (~6 words); no effusive flattery.
+**Why:** the user first asked for light humour, then explicitly asked for MORE "witty humour" during the interview — so the register moved from "occasional tasteful aside" to "genuinely witty rapport-builder." The original bans still hold on exactly what the user hated: cheesy greetings ("Hey, good to see you here"), small-talk openers ("let's dive in"), and gushing praise. Wit ≠ chatty greeting or mockery.
+**How to apply:** keep bans on markdown, *action* words, cheesy greetings and flattery; encourage genuine wit within the guardrails. The humour instruction lives in FOUR prompt sites — opening-question prompt rule, opening system prompt, per-turn STYLE bullet, and per-turn coach system prompt — update all four together or the tone drifts.
+
+# Full-session question uniqueness and final wind-up
+Every generated Interview Ace question must be normalized and checked against the complete asked-question history before it is appended or spoken. Reject exact and close word-overlap duplicates, and replace generic filler prompts with an unused area-aware fallback. A weak answer may receive one retry on the same competency, but never the same question three times.
+
+Interview Ace begins its closing wind-up at 30 seconds remaining and transitions to the report at the selected duration. The free 90-second communication check begins its closing sequence at 10 seconds remaining and submits at the 90-second limit.
+
+**Why:** repeated prompts made the interview feel mechanical, while an early sign-off reduced the candidate's selected practice time. The closing thresholds preserve the full session while giving the candidate a clear natural ending.
+
+**How to apply:** keep the full history and client-side duplicate guard in lockstep with the AI prompt. Preserve `endingRef`/phase guards and stream cancellation around both wind-up paths so late AI output cannot add a question after closing begins.
+
+# Candidate think time — flat 5 s max mid-answer silence (NOT adaptive)
+Two distinct windows: (1) INITIAL think-before-first-word is UNLIMITED — the auto-submit timer is armed only inside the `startContinuous` phrase callback, so a silent candidate is never auto-submitted; (2) MID-ANSWER silence auto-submit is a flat `silenceMs = 5000` in the auto-listen effect: once the candidate starts talking, 5 s of continuous quiet ends the turn and submits. Submit button stays enabled as a manual override to submit sooner.
+**Why:** the user explicitly set the max quiet-before-submit to 5 s. This REVERSED an earlier adaptive attempt (6 s normal / 9 s for reflective questions via a difficulty regex) — the user preferred one simple 5 s cap. Do not reintroduce per-question adaptivity unless they ask.
+**How to apply:** change the single `silenceMs` constant; there is no longer a `needsLongThink`/difficulty heuristic. Keep the timer armed only in the phrase callback so initial thinking stays unlimited.
+
+# No-reply auto-conclude — 33 s of total silence on a new question ends the interview
+Distinct from the mid-answer 5 s auto-submit: if the candidate NEVER starts answering a freshly-asked question, a 33 s watchdog (`noReplyRef`, armed in the auto-listen effect right after `setIsRecording(true)`) concludes the interview and jumps to the report, so feedback is still generated from whatever was answered. It is cleared the instant any speech arrives (folded into `clearAutoSubmitTimer`, which the phrase callback calls on every chunk) and on every mic-stop / submit / end path. `concludeNoReply` mirrors the clock-runout path (endingRef/phaseRef guard, resetStream, speech.stop, short spoken sign-off, setPhase('report') after 2600 ms) and is invoked via `concludeNoReplyRef` so the timer needs no effect deps.
+**Why:** the user asked to end + give feedback when a candidate doesn't reply to a new question for >33 s. Because the initial think-before-first-word is otherwise UNLIMITED, this watchdog is the ONLY thing that ends a fully-silent turn before the overall clock runs out.
+**How to apply:** arm the 33 s timer AFTER `setIsRecording(true)` and clear any stale timer first (a watchdog-driven mic restart must not stack two). Do NOT fold it into `silenceMs` — they are different windows (pre-first-word vs mid-answer).
+
+# Question English level — simplest by default, adapt UP to the candidate
+Interviewer asks in simple, clear, everyday English by default (candidates are mostly from average English-medium colleges); it may use richer vocabulary / more complex questions ONLY when the candidate demonstrably speaks strong, fluent English, and simplifies further if they struggle. Instruction lives in FOUR places: opening prompt rules (+ `profile.englishLevel` as the initial hint), opening system prompt, per-turn STYLE bullet ("judge their English from answers so far"), and per-turn system prompt.
+**Why:** the user said questions were too hard for average English speakers and wanted the level to rise adaptively with the candidate's shown ability.
+**How to apply:** the AI self-assesses English from the transcript (no client-side proficiency metric); keep the instruction in all four prompt sites or the opening/first questions drift back to hard English.
+
+# Interviewer (coach) response delay — strict within 4 s with deadline + fallback
+Hard rule: interviewer MUST start speaking within 4 s of the candidate finishing. Pause must be at least 3 s. Effective range 3–4 s varies by answer length.
+
+Implementation (all in `submitCurrentAnswer`, all declared BEFORE the stream call):
+1. `naturalPauseMs` IIFE: short <15 words → 3.0–3.4 s; medium 15–50 → 3.2–3.7 s; long >50 → 3.4–3.9 s; hesitation +0–300 ms. Clamped [3000, 4000].
+2. `FALLBACK_QUESTIONS` array declared here (used by timeout AND parsing fallback paths).
+3. `minWaitPromise` (3000 ms, `Promise<void>`) kicked off IN PARALLEL with `stream()`.
+4. `streamDeadlinePromise` (3800 ms, `Promise<string>`) — `Promise.race([stream(...), deadline])`; must stay < the 4000 ms cap so an injected fallback still speaks in time.
+5. On timeout (`streamTimedOut=true`) OR empty/error: `resetStream()` + inject `"Ack: I see.\nNext: <fallback>"` so interview always continues.
+6. After stream: `await minWaitPromise` (3 s floor), then guard `endingRef/phaseRef`, then wait `min(wallRemaining, targetRemaining)` using absolute wall-clock budget (4000 - elapsed) to prevent drift.
+7. Guard `endingRef/phaseRef` after EACH await (minWait and remainder).
+
+**Why:** sequential "stream then wait" broke the 3 s minimum on fast streams, exceeded the cap on slow streams, and dropped turns silently on errors. Parallel timer + hard deadline + fallback injection fixes all three. The cap was tightened from 5 s to 4 s at the user's request ("interviewer should reply in 4 seconds"); keep the three deadline/clamp/wall-clock numbers in lockstep (deadline < cap; naturalPauseMs & wallRemaining share the same cap).
+**How to apply:** naturalPauseMs, FALLBACK_QUESTIONS, minWaitPromise, streamDeadlinePromise must ALL be declared BEFORE the try/stream block. Never move them after — the parallel guarantee breaks.
+
+# Scope
+The live AI interview lives ONLY in the web app (`artifacts/edubharat/src/pages/interview-ace.tsx`). Expo `interviews/*` screens only LIST past sessions — they do not generate questions, so interview-prompt changes there are N/A.
+
+# A too-tight stream deadline silently defeats AI question variety (fallback-domination bug)
+If `STREAM_DEADLINE_MS` (the race timeout on the per-turn AI question-generation stream) is set below Claude's real observed latency, the interview falls back to the static question bank on nearly every turn — this LOOKS like "the AI isn't generating varied questions" but the real cause is the fallback path winning the race almost always, not a flaw in the rotation/prompt logic.
+**Why:** diagnosed from a transcript where 7 of 11 questions matched the hardcoded fallback bank near-verbatim; empirical Claude latency for this call is commonly 1.1–2.5s and sometimes higher, so a ~1600ms deadline lost most races.
+**How to apply:** keep `STREAM_DEADLINE_MS` generously above observed p90 latency (currently 3200ms) and keep the fallback banks themselves high-quality as a safety net (3–4 shuffled, role/competency-aware questions per area via `shuffled()`, plus a `domainFallbackQuestions(roleLabel)` generator) — never a single static sentence per competency — since the fallback path still fires occasionally and must not feel repetitive when it does.
+
+# Turn recovery must invalidate late work
+Every submitted answer needs both a bounded recovery timer and a monotonic turn generation. If recovery advances the interview, late AI/STT/TTS callbacks from the old turn must be ignored even when the candidate has already answered the recovery question.
+**Why:** a boolean recovered flag can be reset by the next answer before a slow provider response returns, allowing stale output to append a duplicate question or disrupt the new turn.
+**How to apply:** increment the generation at turn start and again when recovery/cancellation wins; check it after every awaited stream/pause and before committing the next question.
+
+# Spoken acknowledgement vocabulary is locked to exactly "Okay." / "Got it."
+Every interviewer turn's spoken acknowledgement before the next question must be ONE of these two words, alternated, never both combined ("Okay, got it." is banned) and never any other stock phrase ("I see.", "Understood.", "Alright.", "Right.", "Thank you."). Enforced by a final regex sanitize (`/^(okay|got it)\.?$/i`) that overrides whatever the AI/parsing produced, using a `lastAckRef` to alternate. This rule applies interview-system-wide — both `interview-ace.tsx` and the free `communication-check.tsx` assessment.
+**Why:** explicit user requirement; the AI and various fallback paths had drifted into a handful of different stock acknowledgements including a combined "Okay, got it." which the user singled out as wrong.
+**How to apply:** update the AI prompt's STYLE section AND the final sanitize logic together — the sanitize is a safety net, not a substitute for prompting the model correctly.
+
+# Video-call layout is light-themed and camera-tile-balanced (interview-ace.tsx only)
+The live interview screen uses a light theme (not dark) and a `grid grid-cols-2` split of two similarly-sized tiles — interviewer avatar (bumped to `size="xl"`) and candidate webcam — instead of a small centered avatar with a tiny corner webcam PiP. Question caption text is compact (`text-xs sm:text-sm`), not a large headline.
+**Why:** explicit user request after reviewing a transcript/screenshot of the old dark, avatar-small/webcam-tiny layout.
+**How to apply:** this scope is Interview-Ace-specific (the "video call" screen); `communication-check.tsx` already used a lighter theme before this change and was not restyled.
+
+# Testing the no-reply watchdog with a Playwright tester is misleading
+The 30s-ish no-reply watchdog (see above) reliably fires during automated Playwright testing because the testing subagent's own per-step verification/reasoning overhead (screenshotting, describing, analyzing) often exceeds the watchdog window between a question appearing and the next answer being submitted. An interview that "ends after 1-2 questions" during a test run is very often this watchdog working as designed, not a regression — cross-check the API server log timestamps for a gap near/above the watchdog threshold between the last TTS call and the next AI stream call before concluding it's a bug.
+**Why:** wasted a full test cycle chasing a false-positive "premature termination" failure; server log timing (a 46s gap between calls) confirmed the watchdog, not a crash.
+**How to apply:** when writing a test plan for multi-question interview flows, explicitly instruct the tester to submit each answer within ~10-15s of the question appearing and defer detailed analysis until after the full question set is collected.
+
+# Calm speech with live response timing
+AI voice delivery should be slower and easier to follow globally, while live Interview Ace turn-start timing stays fast. Interview Ace questions must be one short, simple question; enforce this in both the prompt and final client parsing.
+
+**Why:** faster TTS made teachers and interviewers feel rushed, but slowing the AI generation/response handoff would make the interview feel unnatural.
+
+**How to apply:** change playback speed/caps rather than adding response waits, and fall back to a short unused question when generated output is multi-question or too long.
+
+# Live Interview Ace latency and STT provider order
+Candidate turn handling should favour complete spoken answers over fragment speed: keep a natural VAD tail and a brief post-transcript pause before submitting, then restart continuous mic capture explicitly after the coach finishes speaking. Speech-to-text uses Deepgram Nova first for conversational English and Google Cloud first for Indian languages; never use display-only partial transcripts to compete with final turn transcription.
+
+**Why:** fragmenting Indian-English answers produced weak evidence and unfair reports, while duplicate preview requests and quota-exhausted AI fallback delayed final transcriptions.
+
+**How to apply:** keep TTS brisk but intelligible, clear any speaker block before starting the next listener, and treat role labels ending in “Interview” as natural spoken labels (for example, “HR interviewer,” not “HR Interview interviewer”).

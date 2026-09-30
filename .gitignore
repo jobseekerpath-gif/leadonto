@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.env.*
+.replit
+.replit-*
+.git-old/

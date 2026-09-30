@@ -1,0 +1,85 @@
+- [EduBharat project](edubharat.md) — India AI Career Ecosystem; Gemini 2.5 Flash, SSE streaming, Indian voice TTS, Google OAuth + Email OTP, PostgreSQL, 4 products + progress dashboard.
+- [Resume Intelligence module](resume-intelligence.md) — section parsing and append-only history preserve old, uploaded, and AI-modified resume data for admin review.
+- [Database persistence patterns](task1-db-persistence.md) — offline-first hooks, schema/API conventions, and rebuild steps for EduBharat DB features.
+- [API security hardening](api-security-hardening.md) — production requires persistent sessions and explicit origins; Replit preview also needs local proxy origins allowed in development.
+- [Tutor portrait system](tutor-portraits.md) — real AI-generated photos replace cartoon SVG; SVG is fallback only; imgFailed resets on imageSrc change; TUTORS array in lib/tutors.ts.
+- [Avatar lip movement](avatar-lip-movement.md) — talking portraits use a CSS puppet-jaw on the real photo (keep amplitude TINY — big scaleY reads as a stretched face); never drive it from the TTS audio graph (breaks autoplay); generateImage can't inpaint frames.
+- [Speech voice fallback](speech-voice-fallback.md) — browser voice lists vary; match by locale/name, then shape pitch/rate when a perfect Indian voice is missing.
+- [English Guru native-lang speech I/O](english-guru-native-lang.md) — browser recognition has NO model for as-IN/or-IN (Punjabi needs pa-Guru-IN); fall back en-IN→en-US, never loop. Voice replies in English by default (script-count heuristic), since the AI speaks mostly English.
+- [Claude live-chat budgeting](claude-live-chat-budgeting.md) — live tutoring should use compact history and low token caps; minimize cost, never promise a fixed per-response price.
+- [English Guru compact layout](english-guru-compact-layout.md) — live conversation uses a footer-free full-viewport shell; only the chat panel scrolls.
+- [Interview Ace auto-listen](interview-auto-listen.md) — mock interviews should start listening automatically after each question and feel conversational, not scripted.
+- [Homepage communication check CTA](communication-check-cta.md) — free two-prompt 90-second voice assessment captures leads, returns concise feedback, and reports to admins.
+- [Interview Ace analytics](interview-analytics.md) — persist one canonical interview session per completed report, not per-question, so progress trends reflect full interviews.
+- [Interview structured format](interview-structured-format.md) — weighted 9-competency BFSI scorecard (1–5); ALL parameters scored every interview (no length-gating); Functional is recurring core (breadth-first rotation, never back-to-back); areaForBeat NEEDS ctx {durationMin,experience,type,roleLabel}; 2-attempt rule; warm tone; ~5s think; web-only.
+- [Interview report generation](interview-report-generation.md) — split into 2 AI calls (ratings survive truncation); AI gives per-competency 1–5 ratings ONLY (all 9) — weighted/overall(×20)/recommendation computed client-side, never AI; competencies in feedbackJson; back-compat improvements↔concerns, old depthProbe key ignored.
+- [Rozgar profile feed](rozgar-profile-feed.md) — Rozgar should stay candidate-driven, with profile basics shaping every section and a live hiring pulse before AI summaries.
+- [Rozgar tile feed layout](rozgar-tiles.md) — Career Feed opens as a compact reference-style tile matrix; selected feeds use structured visual briefs, not raw paragraphs.
+- [Rozgar feed quality](rozgar-feed-quality.md) — section-specific filters, cleaned sources, deduplication, and source-grounded Claude-first briefs keep feeds relevant.
+- [Rozgar feed fallback](rozgar-feed-fallback.md) — every feed tile must render source items or a clearly labeled fallback brief; empty live vacancy responses must not leave a blank category.
+- [Generated content display](generated-content-display.md) — normalize AI output into readable plain text and keep listen/save actions consistent across reusable generated content.
+- [Voice switching should stop playback](voice-switch-stop-playback.md) — changing tutor voice must cancel active speech immediately so male/female voices never mix.
+- [Compact page scroll shells](compact-page-scroll-shells.md) — full-viewport routes still need a real scroll path; inner panes alone can make the page feel frozen.
+- [Progress tab shell gating](progress-tab-gating.md) — multi-tab dashboards should always render the tab shell; per-tab empty states handle missing data.
+- [Shared localStorage keys](shared-localstorage-keys.md) — hooks reading the same domain must use the same key scheme so offline/guest data stays consistent.
+- [Expo mobile design sync](expo-mobile-design-sync.md) — sync web artifact CSS tokens into Expo constants/colors.ts before building screens; derive tool colors from useColors for dark mode.
+- [Expo tab bottom padding](expo-tab-bottom-padding.md) — useSafeBottomPadding distinguishes iOS 26 NativeTabs from classic Tabs; useBottomTabBarHeight only in the classic branch.
+- [Expo progress ring SVG](expo-progress-ring-svg.md) — use react-native-svg strokeDashoffset for accurate circular progress, not border/rotation tricks.
+- [Expo vector-icons preload](expo-vector-icons-preload.md) — @expo/vector-icons render as tofu boxes in native Expo Go (fine on web) unless spread into root useFonts (...Feather.font); web screenshot won't reproduce.
+- [Replit secret naming](replit-secret-naming.md) — Replit secrets can be stored with spaces in their names (e.g. "GOOGLE CLIENT ID"). Always read with both variants: process.env["GOOGLE_CLIENT_ID"] ?? process.env["GOOGLE CLIENT ID"].
+- [Rozgar profile gate](rozgar-profile-gate.md) — gate requires both name AND location before showing feed; gate data must be persisted to useStudentProfile (updateProfile) not just local state.
+- [Admin login pattern](admin-login-pattern.md) — /auth/admin-login uses SHA-256 hash vs ADMIN_USERNAME + ADMIN_PASSWORD_HASH env vars; seeds admin@edubharat.in user on first successful login.
+- [B2B recruiter portal](b2b-portal.md) — separate company auth, own credit ledger, atomic `/complete` tx (FOR UPDATE + spend + session + status), token validation in interview-ace before bypassing charge.
+- [Login-origin capture](login-origin-capture.md) — every login path must record sign-in origin; a blank IP is usually pre-feature rows + a null-hiding admin UI, not broken capture.
+- [Anonymous visitor activity](anonymous-visitor-activity.md) — page views persist server-captured IP, route, user agent, timestamp, and anonymous ID; admins review them separately from signed-in users.
+- [Admin reporting controls](admin-reporting-controls.md) — admin data screens export the currently filtered rows; Quiz is a role-focused learning feed, not a persisted scored assessment.
+- [Email via Resend connector](email-resend-connector.md) — via Replit connector proxy; 403 to non-owner = Resend unverified-domain sandbox limit, not broken wiring; never leak OTP code on failure.
+- [Mobile tool AI calls](mobile-tool-ai.md) — Expo tool/[id].tsx calls /api/ai/chat with {prompt, system, maxTokens} body (NOT messages array); response is {text: string}.
+- [Interview Ace video call UI](interview-video-call.md) — fixed full-screen dark layout (z-30, top:56px); webcam PiP via getUserMedia; camera auto-off on ANY exit from interview phase + post-await race guard; PhoneOff hang-up.
+- [Interview coach auto-selection](interview-coach-selection.md) — interviewer auto-matched to interview TYPE (recommendedCoachFor); B2B b2bCoach LOCKS it — enforce the lock at EVERY mutation point (dropdown AND grid), not just one.
+- [Interview verdict](interview-verdict.md) — weighted 1–5 primary + recommendation band (Strong Hire/Hire/Hold/No Hire); Selected/Not Selected derived from overallScore (pass bar 70 = Hire line); recommendationForWeighted & recommendationForScore agree; static RECOMMENDATION_STYLES; AI gives only rationale.
+- [Edge TTS + echo fix](edge-tts-echo-fix.md) — Live chat + Interview Ace use Edge Neural TTS via /api/tts; blockFor(1200ms) prevents mic from picking up AI's own voice from speakers.
+- [Learning Journey SM-2](learning-journey.md) — /api/journey/* routes; due reviews must interleave separately from new lessons or priority breaks; /api/jobs/search and /api/news/feed also added.
+- [AI quality provider routing](ai-provider-fallback.md) — quality live/lesson routes prefer Claude Sonnet when healthy, then Mistral before Groq; provider cooldowns prevent repeat dead-air failures.
+- [Rozgar filter vs profile](rozgar-filter-priority.md) — job query must send the FILTER city/experience over profile location; two-layer filtering (backend query + client filterJobs) means an unsent filter shows a mismatch AND empties results.
+- [Journey progression](journey-progression.md) — SM-2 queue dead-ends when all lessons have future due dates; use "practice ahead" mode + mastery-based effectiveStage used in BOTH All Lessons and Roadmap locking.
+- [Live-chat recognition loop](live-chat-recognition-loop.md) — ONE startContinuous; recognition hooks MUST stop on unmount (leaked recognizer = "two AIs" + broken continuity); layered echo guard; speechRef/speakRef avoid stale-closure race.
+- [Live turn cancellation](live-turn-cancellation.md) — invalidate a turn generation before aborting its stream so pause/end cannot let late AI output reach history or TTS.
+- [Live filter continuity](live-filter-continuity.md) — mid-session setting changes (language/level) apply via the turn-handler's deps + langCodeRef (next turn), NEVER by synth.stop()/stream-abort (drops the reply → broken continuity).
+- [Interview timed end + stream race](interview-timeout-end.md) — end at time-up even while recording; async turn handlers must re-check endingRef/phaseRef after every await or a late stream adds a question after the sign-off.
+- [Interview turn recovery](interview-turn-recovery.md) — every submitted answer needs a bounded local-question fallback so a slow/failed AI stream cannot strand the candidate.
+- [Live chat news enrichment](live-chat-news-enrichment.md) — DuckDuckGo Instant Answer enriches AI context for news queries; NEWS_RE must be specific; 1500ms client timeout.
+- [Voice transcription fallback](voice-transcription-fallback.md) — shared STT tries Gemini, then Google Cloud, then browser recognition so all voice products recover together.
+- [Journey AI content endpoint](journey-ai-content.md) — GET /journey/lesson-content/:lessonId; in-memory cache capped at 200 entries (FIFO eviction); useEffect([expanded]) triggers fetch; static LESSON_CONTENT is immediate fallback.
+- [Sticky bars below nav](sticky-bars.md) — use sticky top-16 z-20 -mx-4 px-4 bg-white/95 backdrop-blur-sm border-b; works when page container has overflow-y-auto and is the scroll root.
+- [TTS global singleton](tts-global-singleton.md) — module-level _audio/_abort/_url + _stopListeners in use-edge-tts.ts; globalStop() always runs before speak(); relinquish ownerRef before calling globalStop() on unmount.
+- [TTS autoplay unlock](tts-autoplay-unlock.md) — two-layer unlock: AudioContext resume + pre-blessed HTMLAudioElement; reuse _audioCtx (don't recreate); blob.size < 512 guards against empty TTS pipe errors.
+- [Tailwind dynamic classes](tailwind-dynamic-classes.md) — never build class strings with template literals (e.g. opacity-${val}); Tailwind JIT won't detect them. Always use full class strings or ternary of two complete class strings.
+- [Credit-based access system](credit-system.md) — live-only credits; 20-credit signup; idempotent grants; UPI+UTR top-ups PENDING→admin-approve→grant + atomic (conditional-update, single-tx) claw-back/reverse; not Stripe.
+- [esbuild bundled sibling-file hazard](esbuild-bundled-sibling-files.md) — bundled pkgs reading sibling files via import.meta __dirname resolve to the BUNDLE dir; copy their files into the build. (App payments are UPI; no Stripe SDK in code.)
+- [Edge voice availability](edge-voice-availability.md) — pa-IN/or-IN/as-IN and all hi-IN v2 voices return zero-byte audio here; byte-test any voice before mapping; user zips keep re-adding dead voices.
+- [Edge TTS SSML constraints](edge-tts-ssml.md) — never inject <break> tags; they silently cause 0-byte audio; percentage rate strings also break it; use enum values or plain text only.
+- [Session isAdmin flag pattern](session-isadmin-pattern.md) — every non-admin login path must delete req.session.isAdmin or privilege sticks across re-auths.
+- [Guest trial + auth gating](guest-trial.md) — device-local localStorage free trial (no credits); ALWAYS wait for useAuth().isLoading before the guest-vs-paid branch or signed-in users skip the charge.
+- [Schema reaches prod on Publish](schema-to-prod-push.md) — prod schema is applied ONLY by Replit's Publish flow (diffs dev→prod); NEVER manually push/DDL prod. Keep dev schema in sync (drizzle-kit push) so Publish carries it.
+- [DB package build & push gotchas](db-package-build-push.md) — api-server typechecks against @workspace/db's EMITTED .d.ts (rebuild after schema edits); drizzle push goes interactive on runtime-owned tables — exclude via tablesFilter.
+- [CMS content overrides](cms-content-overrides.md) — DB stores ONLY overrides; client inline fallback is the source of truth; registry is editor-discovery only; never seed defaults into DB.
+- [Publish package firewall](publish-package-firewall.md) — Replit publish blocks npm's tar package; Expo's Linux path uses system tar, so keep a local tar shim override.
+- [Publish runtime outputs](publish-runtime-outputs.md) — retain web dist/public and Expo static-build after publish build or autoscale promotion skips them.
+- [Mobile production runner](mobile-production-runner.md) — invoke the zero-dependency Expo static server directly with Node in autoscale images, not through a pnpm filter wrapper.
+- [Live learning exports](live-learning-exports.md) — shared text/CSV downloads and Pause-vs-End semantics keep learning outputs portable and sessions recoverable.
+- [Persona voice uniqueness](persona-voice-uniqueness.md) — every teacher and interviewer must keep a unique Indian neural voice; never reuse a voice mapping.
+- [Expo publish Metro port](expo-publish-metro-port.md) — static mobile builds must avoid fixed Metro 8081 conflicts in the multi-artifact workspace.
+- [Mobile parity runtime](mobile-parity-runtime.md) — stack screens need safe-area-only fallback; API calls must use injected Replit host, not the Expo preview host.
+- [Interview Ace PiP layout](interview-pip-layout.md) — bottom-anchored PiP inside overflow-hidden stage clips at the TOP if content is too tall; watch for duplicate name captions.
+- [Human-like content variation](human-like-content-variation.md) — live coaching and lessons use per-session variation, adaptive reactions, and shuffled fallbacks instead of fixed scripts.
+- [Mobile Speech Recognition earcon](mobile-speech-recognition-earcon.md) — Android Chrome/Web Speech start-stop chimes are outside page audio and cannot be muted without changing recognition behavior.
+- [Firecrawl job analysis](firecrawl-job-analysis.md) — use Firecrawl for pasted public job URLs and resume matching, not primary structured vacancy search.
+- [Rezi benchmark](rezi-benchmark.md) — benchmark Rezi’s ATS and job-tailoring workflows, but implement them natively instead of depending on Rezi.
+- [Dark navbar contrast](dark-navbar-contrast.md) — when shared nav text is light, explicitly scope white dropdown and mobile panels back to dark text.
+- [Native translation intent](native-translation-intent.md) — translation turns need exact source context and a guarded retry, not only general coaching instructions.
+- [Native language request handling](native-language-request-handling.md) — direct “speak in Hindi” requests bypass the live model; malformed native output is not a TTS balance symptom.
+- [Isolated translation architecture](translation-architecture.md) — Gemini receives only source and target for structured translation; normal coaching stays on Claude.
+- [Vertex AI Gemini](vertex-ai-gemini.md) — use the Google Cloud service account path for Gemini; disable hidden thinking on short voice turns to avoid truncated visible replies.
+- [Multilingual speech recognition](multilingual-stt.md) — live English practice must use Nova-3 multilingual code-switching; fixed en-IN turns native speech into gibberish.
+- [Motivational gamification boundary](gamification-layer.md) — local XP, badges, and Word Power engagement never grant credits or paid access; reward triggers must be idempotent at action boundaries.
