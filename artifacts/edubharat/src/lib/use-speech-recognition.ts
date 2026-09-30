@@ -56,10 +56,7 @@ function getMimeType(): string {
 export function useSpeechRecognition(language = "English", options?: SpeechRecognitionOptions) {
   const silenceMs = options?.silenceMs ?? SILENCE_MS;
   const realtime = options?.realtime ?? false;
-  // Live mode needs a quicker turn handoff than batch speech recognition.
-  // Keep the 1350ms default for normal capture, but finalize live speech after
-  // about 650ms of silence so the tutor can answer without a long dead gap.
-  const effectiveSilenceMs = realtime ? Math.min(silenceMs, 650) : silenceMs;
+  const effectiveSilenceMs = realtime ? Math.min(silenceMs, 900) : silenceMs;
   const [status, setStatus] = useState<SpeechRecognitionStatus>("idle");
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -572,7 +569,7 @@ export function useSpeechRecognition(language = "English", options?: SpeechRecog
                || (
                  realtime
                  && now - lastVoiceRef.current >= effectiveSilenceMs
-                 && performance.now() - liveLastEventAtRef.current >= 500
+                 && performance.now() - liveLastEventAtRef.current >= 900
                )
              )
              && !liveFinalizingRef.current
