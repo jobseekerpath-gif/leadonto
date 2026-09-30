@@ -1779,7 +1779,12 @@ Rules for spoken replies:
       ? "there"
       : profile.name?.trim().split(/\s+/)[0] || "there";
     const opening = LIVE_OPENINGS[Math.floor(Math.random() * LIVE_OPENINGS.length)]!(firstName);
-      const greeting = `${opening} I’m ${tutor.name.replace(/\s+(Ma'am|Sir)$/i, "")}.`;
+    const englishGreeting = `${opening} I’m ${tutor.name.replace(/\s+(Ma\'am|Sir)$/i, "")}.`;
+    // Start in the selected helper language so local-language support is audible
+    // immediately, then return to English practice during the conversation.
+    const greeting = uiLang !== "English"
+      ? NATIVE_LANGUAGE_CONFIRMATIONS[uiLang]?.[tutor.voiceGender] ?? englishGreeting
+      : englishGreeting;
     aiBusyRef.current = true;
     speechRef.current.pause();
     lastAiSpeechRef.current = greeting;
@@ -1806,7 +1811,7 @@ Rules for spoken replies:
       releaseGreeting,
       Math.max(greeting.length * 60 + 4000, 10_000),
     );
-    synth.speak(greeting, "English", releaseGreeting, {
+    synth.speak(greeting, uiLang, releaseGreeting, {
       voiceGender: tutor.voiceGender,
       voiceStyle: tutor.voiceStyle,
       rate: ENGLISH_GURU_SPEECH_RATE,
@@ -1816,6 +1821,7 @@ Rules for spoken replies:
     tutor.name,
     tutor.voiceGender,
     tutor.voiceStyle,
+    uiLang,
     synth,
   ]);
 
