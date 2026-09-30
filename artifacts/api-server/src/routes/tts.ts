@@ -42,7 +42,7 @@ export const CHARACTER_VOICE_MAP: Record<string, string> = {
   aryan: "en-IN-Chirp3-HD-Rasalgethi",
 };
 
-const LANGUAGE_CODES: Record<SupportedLanguage, string | null> = {
+const LANGUAGE_CODES: Record<SupportedLanguage, string> = {
   English: "en-IN",
   Hindi: "hi-IN",
   Tamil: "ta-IN",
@@ -53,12 +53,11 @@ const LANGUAGE_CODES: Record<SupportedLanguage, string | null> = {
   Kannada: "kn-IN",
   Malayalam: "ml-IN",
   Punjabi: "pa-IN",
-  // The current Google Cloud catalog does not list native Odia/Assamese
-  // voices. Never route these languages through Hindi because that produces
-  // the wrong language/accent. The browser voice fallback uses the requested
-  // locale when a device provides it.
-  Odia: null,
-  Assamese: null,
+  // Google currently publishes no or-IN/as-IN voice catalog entries. These
+  // two scripts use Google's hi-IN Chirp voice as the server-side fallback
+  // rather than a silent response.
+  Odia: "hi-IN",
+  Assamese: "hi-IN",
   Urdu: "ur-IN",
 };
 
@@ -134,9 +133,6 @@ async function chooseVoice(
   }
 
   const requestedCode = LANGUAGE_CODES[language];
-  if (!requestedCode) {
-    throw new Error(`No native Google Cloud TTS voice is available for ${language}`);
-  }
   const cacheKey = `${requestedCode}:${gender ?? "any"}:${voiceStyle ?? "default"}`;
   const cached = nativeVoiceCache.get(cacheKey);
   if (cached) return cached;
@@ -146,12 +142,7 @@ async function chooseVoice(
   const catalogVoices = (catalog.voices ?? [])
     .filter((voice) => voice.name && voice.languageCodes?.includes(requestedCode))
     .sort((a, b) => {
-      const quality = (name: string) =>
-        name.includes("Chirp3-HD") ? 0
-          : name.includes("Wavenet") ? 1
-            : name.includes("Neural2") ? 2
-              : name.includes("Standard") ? 3
-                : 4;
+      const quality = (name: string) => name.includes("Wavenet") ? 0 : name.includes("Neural2") ? 1 : 2;
       return quality(a.name ?? "") - quality(b.name ?? "") || (a.name ?? "").localeCompare(b.name ?? "");
     });
   const requestedGender = gender === "female" ? "FEMALE" : gender === "male" ? "MALE" : undefined;
@@ -160,19 +151,23 @@ async function chooseVoice(
     : catalogVoices;
   const available = genderMatched.length > 0 ? genderMatched : catalogVoices;
 
-  // Never substitute a different Indian language's voice: that creates a
-  // misleading accent/pronunciation experience. The client has a browser-voice
-  // fallback for languages without a native Google Cloud catalog entry.
-  if (available.length === 0) {
-    throw new Error(`No native Google Cloud TTS voice is available for ${language}`);
+  // Odia and Assamese do not have a dedicated catalog entry in this
+  // environment. A valid Hindi voice is preferable to a silent/500 response.
+  const fallbackCode = available.length > 0 ? requestedCode : "hi-IN";
+  const fallbackCatalog = available.length > 0
+    ? available
+    : ((await client.listVoices({ languageCode: fallbackCode }))[0]?.voices ?? [])
+      .filter((voice) => voice.name && voice.languageCodes?.includes(fallbackCode))
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  if (fallbackCatalog.length === 0 || !fallbackCatalog[0]?.name) {
+    throw new Error(`No Google Cloud TTS voice is available for ${language}`);
   }
-  const fallbackCatalog = available;
 
   const index = CHARACTER_ORDER.indexOf(
     (voiceStyle ?? "maya") as (typeof CHARACTER_ORDER)[number],
   );
   const selected = fallbackCatalog[Math.max(0, index) % fallbackCatalog.length]!;
-  const selection = { languageCode: requestedCode, name: selected.name! };
+  const selection = { languageCode: fallbackCode, name: selected.name! };
   nativeVoiceCache.set(cacheKey, selection);
   return selection;
 }
@@ -190,9 +185,9 @@ async function synthesize(
     voice: { languageCode: voiceLanguageCode, name: voiceName },
     audioConfig: {
       audioEncoding: "MP3",
-      // Keep synthesis near natural pace; the client applies the tutor-specific
-      // playback rate for responsiveness without making articulation harsh.
-      speakingRate: 1.0,
+      // Leave a little room around Indic punctuation; the client applies the
+      // persona-specific playback rate on top of this synthesis rate.
+      speakingRate: 0.96,
       pitch: 0,
     },
   });
