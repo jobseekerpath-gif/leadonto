@@ -34,12 +34,12 @@ import { useGamification } from "@/lib/use-gamification";
 import { wordOfTheDay, type WordPowerEntry } from "@/lib/word-power";
 
 const TUTOR_SPEAKING_STYLES: Record<string, string> = {
-  priya: 'Speak like a warm Mumbai schoolteacher. Use simple words, lots of encouragement, and occasional natural words like "haan", "bilkul", or "thoda practice karo". Never use jargon.',
-  rohit: 'Speak like a no-nonsense Delhi corporate trainer. Be direct and structured. Use phrases like "listen carefully" and "this is what HR expects". Keep it efficient and avoid fluff.',
-  maya: "Speak like a senior Bengaluru business consultant. Be precise and polished, with examples from Indian MNC culture, client calls, and boardroom communication.",
-  arjun: 'Speak like an energetic Hyderabad interview coach. Be fast-paced and positive. Use phrases like "absolutely nail it", "practice this 10 times", and "you\'ve got this yaar".',
-  neha: 'Speak like a patient Kolkata pronunciation teacher. Slow down for demonstrations, break words into syllables, and say "now repeat after me" or "stress the second syllable".',
-  rahul: 'Speak like a methodical Pune grammar teacher. Explain rules step by step with Indian examples about chai, cricket, and festivals. Say "the rule here is" and "a common mistake Indians make is".',
+  priya: "Warm, patient and encouraging. Use clear everyday English with natural Indian context when useful. Never force catchphrases or regional slang.",
+  rohit: "Direct and practical. Give crisp corrections and workplace examples without sounding like a scripted trainer. Never force corporate buzzwords.",
+  maya: "Polished and thoughtful. Use precise explanations and realistic business examples, but keep the conversation relaxed and human.",
+  arjun: "Energetic and upbeat. Keep momentum high with short reactions and practical examples, without hype, slogans or repeated encouragement.",
+  neha: "Patient and pronunciation-focused. Model difficult sounds clearly and naturally; vary explanations instead of repeating the same practice instruction.",
+  rahul: "Methodical and clear. Explain grammar with concise examples and useful corrections, without sounding like a textbook or repeating stock phrases.",
 };
 // Brisk but natural classroom pace. Fast enough to feel responsive without
 // sounding rushed; the live turn timing is unchanged.
@@ -1526,7 +1526,7 @@ Rules for spoken replies:
 - NEVER start your reply with your name or any label like "Teacher:".
 - Prefer pronounceable spoken forms for acronyms and workplace terms. Say "A I", "H R", "R B I", or "business to business" rather than rushing compressed letter strings.
 - Always finish your thought — never cut off mid-sentence.
-- If asked about news, sports, films, prices, or current events: answer confidently using "from what I know" or "last I heard". Do NOT say you have no internet. Your knowledge is up to early 2025; for very recent things, say "I may not have the very latest, but…".${webContextNote}${translationInstruction}${explicitTranslationDirective}`,
+- For news, sports, films, prices, or other current facts, use the supplied web context when available. If it is absent or insufficient, say that the latest detail could not be verified rather than guessing or presenting stale information as current.${webContextNote}${translationInstruction}${explicitTranslationDirective}`,
           undefined,
             {
               endpoint: "/api/ai/conversation",
