@@ -110,11 +110,10 @@ async function transcribeWithGoogleCloud(
 }
 
 function getDeepgramLanguage(language: string): string {
-  // Deepgram accepts the Indian English locale directly. For the Indian
-  // language names used by the app, use Deepgram's base language identifiers.
-  // English turns may contain a native-language help phrase, so use Nova-3's
-  // multilingual mode instead of forcing the whole utterance into en-IN.
-  if (language === "English") return "multi";
+  // Prefer the concrete locale whenever the UI already knows the learner's
+  // language. This is more deterministic than multilingual decoding and keeps
+  // pronunciation/script-sensitive languages on their native model.
+  if (language === "English") return "en-IN";
   const languages: Record<string, string> = {
     English: "en-IN",
     Hindi: "hi",
@@ -137,13 +136,14 @@ async function transcribeWithDeepgram(
   buffer: Buffer,
   mimeType: string,
   language: string,
+  multilingual = false,
 ): Promise<string> {
   const apiKey = process.env["DEEPGRAM_API_KEY"];
   if (!apiKey) throw new Error("DEEPGRAM_API_KEY is not configured");
 
   const params = new URLSearchParams({
     model: "nova-3",
-    language: getDeepgramLanguage(language),
+    language: multilingual ? "multi" : getDeepgramLanguage(language),
     smart_format: "true",
     punctuate: "true",
     utterances: "true",
@@ -167,7 +167,7 @@ async function transcribeWithDeepgram(
       "Content-Type": contentType,
     },
     body: buffer,
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(9000),
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
@@ -199,8 +199,17 @@ router.post("/stt", upload.single("audio"), async (req: Request, res: Response) 
   // remains first for Indian-language input, where its locale support is
   // stronger. Both providers are attempted before the AI fallback.
   const google = { name: "Google Cloud", run: () => transcribeWithGoogleCloud(req.file!.buffer, mimeType, language) };
-  const deepgram = { name: "Deepgram Nova-3", run: () => transcribeWithDeepgram(req.file!.buffer, mimeType, language) };
-  const providers = language === "English" ? [deepgram, google] : [google, deepgram];
+  const deepgramNative = {
+    name: "Deepgram Nova-3",
+    run: () => transcribeWithDeepgram(req.file!.buffer, mimeType, language),
+  };
+  const deepgramMultilingual = {
+    name: "Deepgram Nova-3 multilingual retry",
+    run: () => transcribeWithDeepgram(req.file!.buffer, mimeType, language, true),
+  };
+  const providers = language === "English"
+    ? [deepgramNative, deepgramMultilingual, google]
+    : [google, deepgramNative, deepgramMultilingual];
 
   for (const provider of providers) {
     try {
