@@ -121,10 +121,10 @@ type Candidate = {
 type Answer = { question: string; answer: string };
 type Feedback = {
   source?: "ai" | "indicative";
-  overallScore: number;
-  communicationScore: number;
-  confidenceScore: number;
-  clarityScore: number;
+  overallScore: number | null;
+  communicationScore: number | null;
+  confidenceScore: number | null;
+  clarityScore: number | null;
   headline: string;
   strengths: string[];
   evidence?: string[];
@@ -703,18 +703,24 @@ Never repeat or paraphrase an earlier question. Return one or two short spoken s
                 ["Communication", feedback.communicationScore],
                 ["Confidence", feedback.confidenceScore],
                 ["Clarity", feedback.clarityScore],
-              ].map(([label, score]) => (
-                <div key={label} className={`rounded-2xl border p-4 ${scoreTone(Number(score)).card}`}>
-                  <div className="flex items-end justify-between gap-1">
-                    <p className={`text-2xl font-extrabold ${scoreTone(Number(score)).text}`}>{score}</p>
-                    <p className="text-[10px] font-semibold text-muted-foreground">/ 100</p>
+              ].map(([label, score]) => {
+                const numericScore = typeof score === "number" ? score : null;
+                const tone = numericScore === null
+                  ? { card: "border-slate-200 bg-slate-50", bar: "bg-slate-300", text: "text-slate-500" }
+                  : scoreTone(numericScore);
+                return (
+                  <div key={label} className={`rounded-2xl border p-4 ${tone.card}`}>
+                    <div className="flex items-end justify-between gap-1">
+                      <p className={`text-2xl font-extrabold ${tone.text}`}>{numericScore === null ? "—" : numericScore}</p>
+                      <p className="text-[10px] font-semibold text-muted-foreground">{numericScore === null ? "not scored" : "/ 100"}</p>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/80">
+                      <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${numericScore ?? 0}%` }} />
+                    </div>
+                    <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
                   </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/80">
-                    <div className={`h-full rounded-full ${scoreTone(Number(score)).bar}`} style={{ width: `${Number(score)}%` }} />
-                  </div>
-                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div>
               <h2 className="mb-3 font-bold text-secondary">What came through</h2>
