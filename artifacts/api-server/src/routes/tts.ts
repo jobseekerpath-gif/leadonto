@@ -151,17 +151,13 @@ async function chooseVoice(
     : catalogVoices;
   const available = genderMatched.length > 0 ? genderMatched : catalogVoices;
 
-  // Odia and Assamese do not have a dedicated catalog entry in this
-  // environment. A valid Hindi voice is preferable to a silent/500 response.
-  const fallbackCode = available.length > 0 ? requestedCode : "hi-IN";
-  const fallbackCatalog = available.length > 0
-    ? available
-    : ((await client.listVoices({ languageCode: fallbackCode }))[0]?.voices ?? [])
-      .filter((voice) => voice.name && voice.languageCodes?.includes(fallbackCode))
-      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
-  if (fallbackCatalog.length === 0 || !fallbackCatalog[0]?.name) {
-    throw new Error(`No Google Cloud TTS voice is available for ${language}`);
+  // Never substitute a different Indian language's voice: that creates a
+  // misleading accent/pronunciation experience. The client has a browser-voice
+  // fallback for languages without a native Google Cloud catalog entry.
+  if (available.length === 0) {
+    throw new Error(`No native Google Cloud TTS voice is available for ${language}`);
   }
+  const fallbackCatalog = available;
 
   const index = CHARACTER_ORDER.indexOf(
     (voiceStyle ?? "maya") as (typeof CHARACTER_ORDER)[number],
@@ -185,9 +181,9 @@ async function synthesize(
     voice: { languageCode: voiceLanguageCode, name: voiceName },
     audioConfig: {
       audioEncoding: "MP3",
-      // Leave a little room around Indic punctuation; the client applies the
-      // persona-specific playback rate on top of this synthesis rate.
-      speakingRate: 0.96,
+      // Keep synthesis near natural pace; the client applies the tutor-specific
+      // playback rate for responsiveness without making articulation harsh.
+      speakingRate: 1.0,
       pitch: 0,
     },
   });
