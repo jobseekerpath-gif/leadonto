@@ -23,7 +23,24 @@ function ensureMetaPixel() { if (!META_PIXEL_ID || !canTrack() || typeof documen
 function trackMeta(event: string, properties?: Record<string, unknown>) { if (!META_PIXEL_ID || !canTrack()) return; ensureMetaPixel(); if (typeof window.fbq === "function") window.fbq("trackCustom", event, properties ?? {}); }
 export function track(event: string, properties?: Record<string, unknown>) { sendEvent(event, properties); trackMeta(event, properties); }
 export function trackGoogleAdsPurchase(transactionId: string, value: number): boolean { if (typeof window.gtag !== "function") return false; window.gtag("event", "conversion", { send_to: GOOGLE_ADS_PURCHASE_SEND_TO, value, currency: "INR", transaction_id: transactionId }); return true; }
-export function trackGoogleAdsSignup(method: string): boolean { if (!GOOGLE_ADS_SIGNUP_SEND_TO || typeof window.gtag !== "function") return false; window.gtag("event", "conversion", { send_to: GOOGLE_ADS_SIGNUP_SEND_TO, method }); return true; }
+export function trackGoogleAdsSignup(method: string): boolean {
+  let sent = false;
+  if (typeof window.gtag === "function") {
+    // Always emit a standard sign_up event for GA4/Google Ads imported conversions.
+    // The optional send_to turns the same event into a direct Google Ads conversion
+    // when the account supplies its signup conversion action ID/label.
+    window.gtag("event", "sign_up", { method });
+    if (GOOGLE_ADS_SIGNUP_SEND_TO) {
+      window.gtag("event", "conversion", { send_to: GOOGLE_ADS_SIGNUP_SEND_TO, method });
+      sent = true;
+    }
+  }
+  if (META_PIXEL_ID && canTrack()) {
+    ensureMetaPixel();
+    if (typeof window.fbq === "function") window.fbq("track", "CompleteRegistration", { method });
+  }
+  return sent;
+}
 export function trackFunnel(event: FunnelEvent, properties?: Record<string, unknown>) { sendEvent(`funnel_${event}`, properties); trackMeta(`Funnel_${event}`, properties); }
 export function trackFirstValue(feature: string, properties?: Record<string, unknown>): boolean { try { if (localStorage.getItem(FIRST_VALUE_KEY)) return false; localStorage.setItem(FIRST_VALUE_KEY, feature); } catch { /* continue */ } trackFunnel("first_value_received", { feature, ...properties }); return true; }
 function sendEvent(event: string, properties?: Record<string, unknown>) { const path = window.location.pathname + window.location.search; const payload = { anonymousId: getAnonId(), event, path, properties: { ...(properties ?? {}), acquisition: getAcquisitionContext() } }; const body = JSON.stringify(payload); const blob = new Blob([body], { type: "application/json" }); const sent = navigator.sendBeacon?.(`${ANALYTICS_BASE}/events`, blob); if (!sent) fetch(`${ANALYTICS_BASE}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => { /* ignore */ }); }
