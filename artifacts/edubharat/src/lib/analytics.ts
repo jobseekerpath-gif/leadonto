@@ -7,52 +7,20 @@ const ACQUISITION_FIELDS = ["utm_source", "utm_medium", "utm_campaign", "utm_con
 const GOOGLE_ADS_PURCHASE_SEND_TO = "AW-18381164231/a-wwCM-S0-YcEMd6bxE";
 const GOOGLE_ADS_SIGNUP_SEND_TO = import.meta.env.VITE_GOOGLE_ADS_SIGNUP_SEND_TO?.trim() ?? "";
 const META_PIXEL_ID = import.meta.env.VITE_META_PIXEL_ID?.trim() ?? "";
-
-declare global {
-  interface Window { gtag?: (...args: unknown[]) => void; fbq?: (...args: unknown[]) => void; _fbq?: unknown; }
-}
+declare global { interface Window { gtag?: (...args: unknown[]) => void; fbq?: ((...args: unknown[]) => void) & { queue?: unknown[] }; _fbq?: unknown; } }
 export type Consent = "granted" | "denied" | "pending";
-export type FunnelEvent =
-  | "landing_viewed" | "cta_clicked" | "communication_check_opened" | "communication_check_started"
-  | "communication_check_completed" | "first_session_started" | "first_value_received"
-  | "payment_page_viewed" | "payment_started" | "payment_submitted" | "payment_pending"
-  | "payment_approved" | "payment_succeeded" | "payment_rejected" | "signup_opened" | "signup_started"
-  | "otp_requested" | "otp_verified" | "account_created" | "signup_completed" | "oauth_failed"
-  | "otp_failed" | "otp_expired" | "validation_failed" | "api_failed" | "webview_blocked";
+export type FunnelEvent = "landing_viewed" | "cta_clicked" | "communication_check_opened" | "communication_check_started" | "communication_check_completed" | "first_session_started" | "first_value_received" | "payment_page_viewed" | "payment_started" | "payment_submitted" | "payment_pending" | "payment_approved" | "payment_succeeded" | "payment_rejected" | "signup_opened" | "signup_started" | "otp_requested" | "otp_verified" | "account_created" | "signup_completed" | "oauth_failed" | "otp_failed" | "otp_expired" | "validation_failed" | "api_failed" | "webview_blocked";
 function getAnonId(): string { try { let id = localStorage.getItem(ANON_ID_KEY); if (!id) { id = crypto.randomUUID(); localStorage.setItem(ANON_ID_KEY, id); } return id; } catch { return "anon-unknown"; } }
 type AcquisitionContext = Partial<Record<(typeof ACQUISITION_FIELDS)[number], string>> & { landingPath?: string };
 function readSavedAcquisition(): AcquisitionContext { try { const saved = localStorage.getItem(ACQUISITION_KEY); if (!saved) return {}; const parsed = JSON.parse(saved) as AcquisitionContext; return parsed && typeof parsed === "object" ? parsed : {}; } catch { return {}; } }
-function getAcquisitionContext(): AcquisitionContext {
-  try {
-    const params = new URLSearchParams(window.location.search); const current: AcquisitionContext = {};
-    for (const field of ACQUISITION_FIELDS) { const value = params.get(field)?.trim(); if (value) current[field] = value.slice(0, 180); }
-    if (Object.keys(current).length) { const saved = readSavedAcquisition(); const merged = { ...saved, ...current, landingPath: saved.landingPath ?? window.location.pathname.slice(0, 240) }; localStorage.setItem(ACQUISITION_KEY, JSON.stringify(merged)); return merged; }
-    return readSavedAcquisition();
-  } catch { return {}; }
-}
+function getAcquisitionContext(): AcquisitionContext { try { const params = new URLSearchParams(window.location.search); const current: AcquisitionContext = {}; for (const field of ACQUISITION_FIELDS) { const value = params.get(field)?.trim(); if (value) current[field] = value.slice(0, 180); } if (Object.keys(current).length) { const saved = readSavedAcquisition(); const merged = { ...saved, ...current, landingPath: saved.landingPath ?? window.location.pathname.slice(0, 240) }; localStorage.setItem(ACQUISITION_KEY, JSON.stringify(merged)); return merged; } return readSavedAcquisition(); } catch { return {}; } }
 export function withAcquisition(href: string): string { try { const url = new URL(href, window.location.origin); if (url.origin !== window.location.origin) return href; const acquisition = getAcquisitionContext(); for (const field of ACQUISITION_FIELDS) { const value = acquisition[field]; if (value && !url.searchParams.has(field)) url.searchParams.set(field, value); } return `${url.pathname}${url.search}${url.hash}`; } catch { return href; } }
 export function getConsent(): Consent { try { return (localStorage.getItem(CONSENT_KEY) as Consent) ?? "pending"; } catch { return "denied"; } }
 export function setConsent(value: Consent) { try { localStorage.setItem(CONSENT_KEY, value); } catch { /* ignore */ } }
 export function canTrack(): boolean { return getConsent() === "granted"; }
-
 let metaLoadStarted = false;
-function ensureMetaPixel() {
-  if (!META_PIXEL_ID || !canTrack() || typeof document === "undefined" || typeof window.fbq === "function" || metaLoadStarted) return;
-  metaLoadStarted = true;
-  const w = window as Window & { fbq?: (...args: unknown[]) => void; _fbq?: unknown };
-  const fbq = (...args: unknown[]) => { if (typeof w.fbq?.queue === "undefined") { /* shim */ } };
-  const shim = ((...args: unknown[]) => { (shim as typeof shim & { queue?: unknown[] }).queue ??= []; (shim as typeof shim & { queue?: unknown[] }).queue.push(args); }) as typeof window.fbq;
-  w.fbq = shim;
-  w._fbq = shim;
-  const script = document.createElement("script"); script.async = true; script.src = "https://connect.facebook.net/en_US/fbevents.js";
-  script.onload = () => { w.fbq?.("init", META_PIXEL_ID); w.fbq?.("track", "PageView"); };
-  document.head.appendChild(script);
-}
-function trackMeta(event: string, properties?: Record<string, unknown>) {
-  if (!META_PIXEL_ID || !canTrack()) return;
-  ensureMetaPixel();
-  if (typeof window.fbq === "function") window.fbq("trackCustom", event, properties ?? {});
-}
+function ensureMetaPixel() { if (!META_PIXEL_ID || !canTrack() || typeof document === "undefined" || typeof window.fbq === "function" || metaLoadStarted) return; metaLoadStarted = true; const w = window; const shim = ((...args: unknown[]) => { shim.queue ??= []; shim.queue.push(args); }) as typeof window.fbq; w.fbq = shim; w._fbq = shim; const script = document.createElement("script"); script.async = true; script.src = "https://connect.facebook.net/en_US/fbevents.js"; script.onload = () => { w.fbq?.("init", META_PIXEL_ID); w.fbq?.("track", "PageView"); }; document.head.appendChild(script); }
+function trackMeta(event: string, properties?: Record<string, unknown>) { if (!META_PIXEL_ID || !canTrack()) return; ensureMetaPixel(); if (typeof window.fbq === "function") window.fbq("trackCustom", event, properties ?? {}); }
 export function track(event: string, properties?: Record<string, unknown>) { sendEvent(event, properties); trackMeta(event, properties); }
 export function trackGoogleAdsPurchase(transactionId: string, value: number): boolean { if (typeof window.gtag !== "function") return false; window.gtag("event", "conversion", { send_to: GOOGLE_ADS_PURCHASE_SEND_TO, value, currency: "INR", transaction_id: transactionId }); return true; }
 export function trackGoogleAdsSignup(method: string): boolean { if (!GOOGLE_ADS_SIGNUP_SEND_TO || typeof window.gtag !== "function") return false; window.gtag("event", "conversion", { send_to: GOOGLE_ADS_SIGNUP_SEND_TO, method }); return true; }
