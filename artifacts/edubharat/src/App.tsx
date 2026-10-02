@@ -14,6 +14,7 @@ const queryClient = new QueryClient();
 const NotFound = lazy(() => import("@/pages/not-found"));
 const Home = lazy(() => import("@/pages/home"));
 const EnglishLanding = lazy(() => import("@/pages/english-landing"));
+const AdLanding = lazy(() => import("@/pages/ad-landing"));
 const EnglishGuru = lazy(() => import("@/pages/english-guru"));
 const ToolsPro = lazy(() => import("@/pages/tools-pro"));
 const InterviewAce = lazy(() => import("@/pages/interview-ace"));
@@ -87,7 +88,7 @@ function Router() {
   return (
     <Switch>
       {/* Product routes that keep the compact / no-footer shells they already use */}
-      <Route path="/english-guru">
+      <Route path="/ad/english">\n        <AdLanding variant="english" />\n      </Route>\n      <Route path="/ad/interview">\n        <AdLanding variant="interview" />\n      </Route>\n      <Route path="/english-guru">
         <Layout>
           <EnglishLanding />
         </Layout>
