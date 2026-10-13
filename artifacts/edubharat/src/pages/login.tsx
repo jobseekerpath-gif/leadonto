@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/use-auth";
 import { Loader2, Mail, ArrowRight, ShieldCheck, AlertTriangle, Copy, CheckCheck, ExternalLink } from "lucide-react";
 import { PageMeta } from "@/components/page-meta";
@@ -14,6 +15,10 @@ function getExternalBrowserUrl(url: string, userAgent: string): string {
   if (/Android/i.test(userAgent)) { const browserTarget = url.replace(/^https?:\/\//i, ""); return `intent://${browserTarget}#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`; }
   if (/(iPhone|iPad|iPod)/i.test(userAgent) && /^https:/i.test(url)) return url.replace(/^https:/i, "x-safari-https:");
   return url;
+}
+function getGuestIdSafely(): string | undefined {
+  // Embedded browsers/private modes may deny localStorage; OTP sign-in must still work.
+  try { return window.localStorage.getItem("edubharat_guest_id") ?? undefined; } catch { return undefined; }
 }
 function getContextualCopy(returnTo: string | null): { title: string; description: string } {
   const path = returnTo ?? "";
@@ -45,7 +50,7 @@ function LoginContent() {
   };
   const handleVerifyOtp = async () => {
     if (!otp.trim() || otp.trim().length !== 6) { trackFunnel("validation_failed", { stage: "otp_verify", field: "code" }); setError("Please enter the 6-digit OTP"); return; }
-    setLoading(true); setError(""); const guestId = localStorage.getItem("edubharat_guest_id") ?? undefined; const result = await verifyOtp(email, otp, guestId); setLoading(false);
+    setLoading(true); setError(""); const guestId = getGuestIdSafely(); const result = await verifyOtp(email, otp, guestId); setLoading(false);
     if (result.error) { const genericExpiredMessage = /expired/i.test(result.error); const secondsSinceSent = otpSentAt ? (Date.now() - otpSentAt) / 1000 : Infinity; const likelyTypo = genericExpiredMessage && secondsSinceSent < 120; const expired = genericExpiredMessage && !likelyTypo; trackFunnel(expired ? "otp_expired" : "otp_failed", { stage: "verify", reason: result.error.slice(0, 120) }); setError(likelyTypo ? "That code doesn't match. Double-check the 6 digits from your email and try again." : result.error); track("otp_verify_attempted", { success: false, error_reason: result.error.slice(0, 120) }); track("otp_verify_failed", { error_reason: result.error.slice(0, 120) }); }
     else {
       track("otp_verify_attempted", { success: true }); track("otp_verify_success"); trackFunnel("otp_verified", { method: "email" }); track("account_created", { auth_method: "email_otp" }); trackFunnel("account_created", { method: "email_otp" }); trackFunnel("signup_completed", { method: "email_otp" }); trackGoogleAdsSignup("email_otp");
