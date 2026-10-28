@@ -121,13 +121,19 @@ type VoiceSelection = { languageCode: string; name: string };
 const KOKORO_CHARACTER_VOICES: Record<string,string> = { priya:"af_heart", rohit:"am_michael", maya:"af_bella", arjun:"am_adam", neha:"af_nicole", rahul:"am_fenrir", ananya:"af_sarah", priya_coach:"af_sky", raj:"am_onyx", vikram:"am_puck", meera_coach:"af_nova", kabir:"am_echo", sanjay:"am_liam", aryan:"am_eric" };
 const nativeVoiceCache = new Map<string, VoiceSelection>();
 
+function getKokoroConfig(): { baseUrl: string; apiKey: string } | null {
+  const baseUrl = process.env.KOKORO_TTS_BASE_URL?.trim().replace(/\\/+$/, "");
+  const apiKey = process.env.KOKORO_API_KEY?.trim();
+  return baseUrl && apiKey ? { baseUrl, apiKey } : null;
+}
+
 async function chooseVoice(
   language: SupportedLanguage,
   voiceStyle?: string,
   gender?: "male" | "female",
 ): Promise<VoiceSelection> {
   if (language === "English") {
-    if (process.env.KOKORO_TTS_BASE_URL && process.env.KOKORO_API_KEY) return { languageCode: "en-US", name: KOKORO_CHARACTER_VOICES[voiceStyle ?? ""] ?? KOKORO_CHARACTER_VOICES.maya! };
+    if (getKokoroConfig()) return { languageCode: "en-US", name: KOKORO_CHARACTER_VOICES[voiceStyle ?? ""] ?? KOKORO_CHARACTER_VOICES.maya! };
     return {
       languageCode: LANGUAGE_CODES.English,
       name: CHARACTER_VOICE_MAP[voiceStyle ?? ""] ?? CHARACTER_VOICE_MAP.maya!,
@@ -249,10 +255,7 @@ router.post("/tts", async (req, res) => {
 });
 
 router.get("/tts/voices", (_req, res) => {
-  const useKokoro = Boolean(
-    process.env.KOKORO_TTS_BASE_URL?.trim() &&
-    process.env.KOKORO_API_KEY?.trim(),
-  );
+  const useKokoro = Boolean(getKokoroConfig());
   res.json({
     provider: useKokoro ? "kokoro" : "google-cloud-text-to-speech",
     kokoroConfigured: useKokoro,
