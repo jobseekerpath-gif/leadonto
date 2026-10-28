@@ -137,6 +137,21 @@ async function chooseVoice(
   const cached = nativeVoiceCache.get(cacheKey);
   if (cached) return cached;
 
+  if (process.env.KOKORO_TTS_BASE_URL && process.env.KOKORO_API_KEY && voiceLanguageCode -eq "en-US") {
+    const baseUrl = process.env.KOKORO_TTS_BASE_URL.replace(/\/+$/, "");
+    const response = await fetch(`${baseUrl}/v1/audio/speech`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.KOKORO_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "kokoro", input: text, voice: voiceName, response_format: "mp3" })
+    });
+    if (!response.ok) throw new Error(`Kokoro TTS failed: ${response.status} ${(await response.text()).slice(0,300)}`);
+    const audio = Buffer.from(await response.arrayBuffer());
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Length", audio.length);
+    res.end(audio);
+    return;
+  }
   const client = getGoogleTtsClient();
   const [catalog] = await client.listVoices({ languageCode: requestedCode });
   const catalogVoices = (catalog.voices ?? [])
@@ -179,6 +194,21 @@ async function synthesize(
   voiceName: string,
   voiceLanguageCode: string,
 ): Promise<void> {
+  if (process.env.KOKORO_TTS_BASE_URL && process.env.KOKORO_API_KEY && voiceLanguageCode -eq "en-US") {
+    const baseUrl = process.env.KOKORO_TTS_BASE_URL.replace(/\/+$/, "");
+    const response = await fetch(`${baseUrl}/v1/audio/speech`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.KOKORO_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "kokoro", input: text, voice: voiceName, response_format: "mp3" })
+    });
+    if (!response.ok) throw new Error(`Kokoro TTS failed: ${response.status} ${(await response.text()).slice(0,300)}`);
+    const audio = Buffer.from(await response.arrayBuffer());
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Length", audio.length);
+    res.end(audio);
+    return;
+  }
   const client = getGoogleTtsClient();
   const [response] = await client.synthesizeSpeech({
     input: { text },
