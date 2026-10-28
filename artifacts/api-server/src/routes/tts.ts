@@ -249,10 +249,15 @@ router.post("/tts", async (req, res) => {
 });
 
 router.get("/tts/voices", (_req, res) => {
+  const useKokoro = Boolean(
+    process.env.KOKORO_TTS_BASE_URL?.trim() &&
+    process.env.KOKORO_API_KEY?.trim(),
+  );
   res.json({
-    provider: "google-cloud-text-to-speech",
-    languages: Object.keys(LANGUAGE_CODES),
-    characters: CHARACTER_VOICE_MAP,
+    provider: useKokoro ? "kokoro" : "google-cloud-text-to-speech",
+    kokoroConfigured: useKokoro,
+    languages: useKokoro ? ["English"] : Object.keys(LANGUAGE_CODES),
+    characters: useKokoro ? KOKORO_CHARACTER_VOICES : CHARACTER_VOICE_MAP,
   });
 });
 
