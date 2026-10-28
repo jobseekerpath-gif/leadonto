@@ -118,6 +118,7 @@ function isSupportedLanguage(value: string): value is SupportedLanguage {
 }
 
 type VoiceSelection = { languageCode: string; name: string };
+const KOKORO_CHARACTER_VOICES: Record<string,string> = { priya:"af_heart", rohit:"am_michael", maya:"af_bella", arjun:"am_adam", neha:"af_nicole", rahul:"am_fenrir", ananya:"af_sarah", priya_coach:"af_sky", raj:"am_onyx", vikram:"am_puck", meera_coach:"af_nova", kabir:"am_echo", sanjay:"am_liam", aryan:"am_eric" };
 const nativeVoiceCache = new Map<string, VoiceSelection>();
 
 async function chooseVoice(
@@ -126,6 +127,7 @@ async function chooseVoice(
   gender?: "male" | "female",
 ): Promise<VoiceSelection> {
   if (language === "English") {
+    if (process.env.KOKORO_TTS_BASE_URL && process.env.KOKORO_API_KEY) return { languageCode: "en-US", name: KOKORO_CHARACTER_VOICES[voiceStyle ?? ""] ?? KOKORO_CHARACTER_VOICES.maya! };
     return {
       languageCode: LANGUAGE_CODES.English,
       name: CHARACTER_VOICE_MAP[voiceStyle ?? ""] ?? CHARACTER_VOICE_MAP.maya!,
@@ -137,21 +139,6 @@ async function chooseVoice(
   const cached = nativeVoiceCache.get(cacheKey);
   if (cached) return cached;
 
-  if (process.env.KOKORO_TTS_BASE_URL && process.env.KOKORO_API_KEY && voiceLanguageCode -eq "en-US") {
-    const baseUrl = process.env.KOKORO_TTS_BASE_URL.replace(/\/+$/, "");
-    const response = await fetch(`${baseUrl}/v1/audio/speech`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.KOKORO_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "kokoro", input: text, voice: voiceName, response_format: "mp3" })
-    });
-    if (!response.ok) throw new Error(`Kokoro TTS failed: ${response.status} ${(await response.text()).slice(0,300)}`);
-    const audio = Buffer.from(await response.arrayBuffer());
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Length", audio.length);
-    res.end(audio);
-    return;
-  }
   const client = getGoogleTtsClient();
   const [catalog] = await client.listVoices({ languageCode: requestedCode });
   const catalogVoices = (catalog.voices ?? [])
@@ -194,20 +181,10 @@ async function synthesize(
   voiceName: string,
   voiceLanguageCode: string,
 ): Promise<void> {
-  if (process.env.KOKORO_TTS_BASE_URL && process.env.KOKORO_API_KEY && voiceLanguageCode -eq "en-US") {
-    const baseUrl = process.env.KOKORO_TTS_BASE_URL.replace(/\/+$/, "");
-    const response = await fetch(`${baseUrl}/v1/audio/speech`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.KOKORO_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "kokoro", input: text, voice: voiceName, response_format: "mp3" })
-    });
+  if (process.env.KOKORO_TTS_BASE_URL && process.env.KOKORO_API_KEY && voiceLanguageCode === "en-US") {
+    const response = await fetch(`${process.env.KOKORO_TTS_BASE_URL.replace(/\/+$/, "")}/v1/audio/speech`, { method: "POST", headers: { Authorization: `Bearer ${process.env.KOKORO_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "kokoro", input: text, voice: voiceName, response_format: "mp3" }) });
     if (!response.ok) throw new Error(`Kokoro TTS failed: ${response.status} ${(await response.text()).slice(0,300)}`);
-    const audio = Buffer.from(await response.arrayBuffer());
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Length", audio.length);
-    res.end(audio);
-    return;
+    const audio = Buffer.from(await response.arrayBuffer()); res.setHeader("Content-Type","audio/mpeg"); res.setHeader("Cache-Control","no-store"); res.setHeader("Content-Length",audio.length); res.end(audio); return;
   }
   const client = getGoogleTtsClient();
   const [response] = await client.synthesizeSpeech({
