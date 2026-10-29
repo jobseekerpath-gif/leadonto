@@ -1,85 +1,43 @@
 import { Router, type Response } from "express";
-import { TextToSpeechClient } from "@google-cloud/text-to-speech";
+import { EdgeTTS } from "node-edge-tts";
 
 const router = Router();
 
 type SupportedLanguage =
-  | "English"
-  | "Hindi"
-  | "Tamil"
-  | "Telugu"
-  | "Bengali"
-  | "Marathi"
-  | "Gujarati"
-  | "Kannada"
-  | "Malayalam"
-  | "Punjabi"
-  | "Odia"
-  | "Assamese"
-  | "Urdu";
+  | "English" | "Hindi" | "Tamil" | "Telugu" | "Bengali" | "Marathi"
+  | "Gujarati" | "Kannada" | "Malayalam" | "Punjabi" | "Odia"
+  | "Assamese" | "Urdu";
 
-/**
- * Permanent character → Google Cloud voice identity.
- *
- * These are Google Chirp 3 HD English voices, deliberately assigned once and
- * never selected by gender, browser availability, or randomness.
- */
-export const CHARACTER_VOICE_MAP: Record<string, string> = {
-  priya: "en-IN-Chirp3-HD-Aoede",
-  rohit: "en-IN-Chirp3-HD-Algieba",
-  maya: "en-IN-Chirp3-HD-Callirrhoe",
-  arjun: "en-IN-Chirp3-HD-Fenrir",
-  neha: "en-IN-Chirp3-HD-Kore",
-  rahul: "en-IN-Chirp3-HD-Orus",
-  ananya: "en-IN-Chirp3-HD-Leda",
-  priya_coach: "en-IN-Chirp3-HD-Achernar",
-  raj: "en-IN-Chirp3-HD-Algenib",
-  vikram: "en-IN-Chirp3-HD-Charon",
-  meera_coach: "en-IN-Chirp3-HD-Despina",
-  kabir: "en-IN-Chirp3-HD-Enceladus",
-  sanjay: "en-IN-Chirp3-HD-Iapetus",
-  // Gacrux is a feminine timbre; Aryan must use a clearly masculine voice.
-  aryan: "en-IN-Chirp3-HD-Rasalgethi",
+type EdgeVoice = { lang: string; female: string; male: string };
+
+// Microsoft Edge online neural voices. No Google credentials or Kokoro API
+// keys are used. English teachers specifically use Indian English (en-IN).
+const EDGE_VOICES: Record<SupportedLanguage, EdgeVoice> = {
+  English:  { lang: "en-IN", female: "en-IN-NeerjaNeural", male: "en-IN-PrabhatNeural" },
+  Hindi:    { lang: "hi-IN", female: "hi-IN-SwaraNeural", male: "hi-IN-MadhurNeural" },
+  Tamil:    { lang: "ta-IN", female: "ta-IN-PallaviNeural", male: "ta-IN-ValluvarNeural" },
+  Telugu:   { lang: "te-IN", female: "te-IN-ShrutiNeural", male: "te-IN-MohanNeural" },
+  Bengali:  { lang: "bn-IN", female: "bn-IN-TanishaaNeural", male: "bn-IN-BashkarNeural" },
+  Marathi:  { lang: "mr-IN", female: "mr-IN-AarohiNeural", male: "mr-IN-ManoharNeural" },
+  Gujarati: { lang: "gu-IN", female: "gu-IN-DhwaniNeural", male: "gu-IN-NiranjanNeural" },
+  Kannada:  { lang: "kn-IN", female: "kn-IN-SapnaNeural", male: "kn-IN-GaganNeural" },
+  Malayalam:{ lang: "ml-IN", female: "ml-IN-SobhanaNeural", male: "ml-IN-MidhunNeural" },
+  Punjabi:  { lang: "pa-IN", female: "pa-IN-VaaniNeural", male: "pa-IN-OjasNeural" },
+  // Use Hindi neural voices where a reliable dedicated catalog is not available.
+  Odia:     { lang: "hi-IN", female: "hi-IN-SwaraNeural", male: "hi-IN-MadhurNeural" },
+  Assamese: { lang: "hi-IN", female: "hi-IN-SwaraNeural", male: "hi-IN-MadhurNeural" },
+  Urdu:     { lang: "ur-PK", female: "ur-PK-UzmaNeural", male: "ur-PK-AsadNeural" },
 };
 
-const LANGUAGE_CODES: Record<SupportedLanguage, string> = {
-  English: "en-IN",
-  Hindi: "hi-IN",
-  Tamil: "ta-IN",
-  Telugu: "te-IN",
-  Bengali: "bn-IN",
-  Marathi: "mr-IN",
-  Gujarati: "gu-IN",
-  Kannada: "kn-IN",
-  Malayalam: "ml-IN",
-  Punjabi: "pa-IN",
-  // Google currently publishes no or-IN/as-IN voice catalog entries. These
-  // two scripts use Google's hi-IN Chirp voice as the server-side fallback
-  // rather than a silent response.
-  Odia: "hi-IN",
-  Assamese: "hi-IN",
-  Urdu: "ur-IN",
+const CHARACTER_GENDER: Record<string, "female" | "male"> = {
+  priya: "female", rohit: "male", maya: "female", arjun: "male",
+  neha: "female", rahul: "male", ananya: "female", priya_coach: "female",
+  raj: "male", vikram: "male", meera_coach: "female", kabir: "male",
+  sanjay: "male", aryan: "male",
 };
 
-const CHARACTER_ORDER = [
-  "priya", "rohit", "maya", "arjun", "neha", "rahul", "ananya",
-  "priya_coach", "raj", "vikram", "meera_coach", "kabir", "sanjay", "aryan",
-] as const;
-
-let googleTtsClient: TextToSpeechClient | null = null;
-
-function getGoogleTtsClient(): TextToSpeechClient {
-  if (googleTtsClient) return googleTtsClient;
-  const rawCredentials = process.env.GOOGLE_CLOUD_TTS_SERVICE_ACCOUNT_JSON;
-  if (!rawCredentials) {
-    throw new Error("GOOGLE_CLOUD_TTS_SERVICE_ACCOUNT_JSON is not configured");
-  }
-  const credentials = JSON.parse(rawCredentials) as {
-    client_email: string;
-    private_key: string;
-  };
-  googleTtsClient = new TextToSpeechClient({ credentials });
-  return googleTtsClient;
+function isSupportedLanguage(value: string): value is SupportedLanguage {
+  return Object.prototype.hasOwnProperty.call(EDGE_VOICES, value);
 }
 
 function cleanForTTS(text: string): string {
@@ -189,29 +147,19 @@ async function synthesize(
   voiceName: string,
   voiceLanguageCode: string,
 ): Promise<void> {
-  if (process.env.KOKORO_TTS_BASE_URL && process.env.KOKORO_API_KEY && voiceLanguageCode === "en-US") {
-    const response = await fetch(`${process.env.KOKORO_TTS_BASE_URL.replace(/\/+$/, "")}/v1/audio/speech`, { method: "POST", headers: { Authorization: `Bearer ${process.env.KOKORO_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "kokoro", input: text, voice: voiceName, response_format: "mp3" }) });
-    if (!response.ok) throw new Error(`Kokoro TTS failed: ${response.status} ${(await response.text()).slice(0,300)}`);
-    const audio = Buffer.from(await response.arrayBuffer()); res.setHeader("Content-Type","audio/mpeg"); res.setHeader("Cache-Control","no-store"); res.setHeader("Content-Length",audio.length); res.end(audio); return;
-  }
-  const client = getGoogleTtsClient();
-  const [response] = await client.synthesizeSpeech({
-    input: { text },
-    voice: { languageCode: voiceLanguageCode, name: voiceName },
-    audioConfig: {
-      audioEncoding: "MP3",
-      // Leave a little room around Indic punctuation; the client applies the
-      // persona-specific playback rate on top of this synthesis rate.
-      speakingRate: 0.96,
-      pitch: 0,
-    },
+  const tts = new EdgeTTS({
+    voice: voiceName,
+    lang: voiceLanguageCode,
+    outputFormat: "audio-24khz-96kbitrate-mono-mp3",
+    rate: "-4%",
+    timeout: 20000,
   });
-  if (!response.audioContent) {
-    throw new Error(`Google Cloud TTS returned no audio for ${voiceName}`);
+  const chunks: Buffer[] = [];
+  for await (const chunk of tts.streamAudio(text)) {
+    if (Buffer.isBuffer(chunk)) chunks.push(chunk);
   }
-  const audio = Buffer.isBuffer(response.audioContent)
-    ? response.audioContent
-    : Buffer.from(response.audioContent as Uint8Array);
+  const audio = Buffer.concat(chunks);
+  if (!audio.length) throw new Error(`Edge TTS returned no audio for ${voiceName}`);
   res.setHeader("Content-Type", "audio/mpeg");
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Length", audio.length);
@@ -247,8 +195,11 @@ router.post("/tts", async (req, res) => {
   }
 
   try {
-    const voice = await chooseVoice(targetLanguage, voiceStyle, gender);
-    await synthesize(res, cleaned, targetLanguage, voice.name, voice.languageCode);
+    const character = (voiceStyle ?? "maya").toLowerCase();
+    const profile = EDGE_VOICES[targetLanguage];
+    const requestedGender = gender ?? CHARACTER_GENDER[character] ?? "female";
+    const voiceName = profile[requestedGender];
+    await synthesize(res, cleaned, targetLanguage, voiceName, profile.lang);
   } catch (err) {
     req.log.error({ err, language: targetLanguage, voiceStyle }, "Google Cloud TTS failed");
     if (!res.headersSent) res.status(500).json({ error: "Google Cloud TTS failed" });
@@ -258,10 +209,16 @@ router.post("/tts", async (req, res) => {
 
 router.get("/tts/voices", (_req, res) => {
   res.json({
-    provider: "google-cloud-text-to-speech",
-    languages: Object.keys(LANGUAGE_CODES),
-    characters: CHARACTER_VOICE_MAP,
+    provider: "microsoft-edge-tts",
+    languages: Object.keys(EDGE_VOICES),
     englishVoiceLanguageCode: "en-IN",
+    englishVoices: {
+      female: EDGE_VOICES.English.female,
+      male: EDGE_VOICES.English.male,
+    },
+    characters: CHARACTER_GENDER,
+    googleTtsRequired: false,
+    kokoroRequired: false,
   });
 });
 
