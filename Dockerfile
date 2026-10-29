@@ -10,7 +10,7 @@ RUN npm install -g pnpm
 COPY . .
 
 # Install dependencies for api-server, lib, AND edubharat (web app)
-RUN pnpm install --frozen-lockfile --filter="./artifacts/api-server" --filter="./artifacts/edubharat" --filter="./lib/**"
+RUN pnpm install --no-frozen-lockfile --filter="./artifacts/api-server" --filter="./artifacts/edubharat" --filter="./lib/**"
 
 # Build api-server
 RUN pnpm --filter "./artifacts/api-server" run build
