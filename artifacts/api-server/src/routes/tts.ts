@@ -3,7 +3,6 @@ import { Router } from "express";
 const router = Router();
 
 type SupportedLanguage = "English" | "Hindi";
-
 const CHARACTER_GENDER: Record<string, "female" | "male"> = {
   priya: "female", rohit: "male", maya: "female", arjun: "male",
   neha: "female", rahul: "male", ananya: "female", priya_coach: "female",
@@ -73,15 +72,15 @@ router.post("/tts", async (req, res) => {
 
   const character = (voiceStyle ?? "maya").toLowerCase();
   const requestedGender = gender ?? CHARACTER_GENDER[character] ?? "female";
+  const voice = language === "Hindi"
+    ? (requestedGender === "male" ? "hm_omega" : "hf_alpha")
+    : (requestedGender === "male" ? "indian_male" : "indian_female");
+
   try {
     const response = await fetch("http://127.0.0.1:8001/synthesize", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: cleaned,
-        language,
-        voice: requestedGender === "male" ? "hm_omega" : "hf_alpha",
-      }),
+      body: JSON.stringify({ text: cleaned, language, voice }),
       signal: AbortSignal.timeout(120000),
     });
 
@@ -103,23 +102,20 @@ router.post("/tts", async (req, res) => {
     res.end(audio);
   } catch (err) {
     req.log.error({ err, language, voiceStyle }, "Kokoro TTS request failed");
-    if (!res.headersSent) {
-      res.status(502).json({ error: "Kokoro TTS service is unavailable" });
-    }
+    if (!res.headersSent) res.status(502).json({ error: "Kokoro TTS service is unavailable" });
   }
 });
 
 router.get("/tts/voices", (_req, res) => {
   res.json({
-    provider: "kokoro-indian-accent",
+    provider: "kokoro",
     model: "Kokoro-82M",
     languages: ["English", "Hindi"],
     englishVoiceLanguageCode: "en-IN",
-    englishVoices: { female: "hf_alpha", male: "hm_omega" },
+    englishVoices: { female: "indian_female", male: "indian_male" },
     characters: Object.fromEntries(
       Object.entries(CHARACTER_GENDER).map(([character, gender]) => [
-        character,
-        gender === "male" ? "hm_omega" : "hf_alpha",
+        character, gender === "male" ? "indian_male" : "indian_female",
       ]),
     ),
     googleTtsRequired: false,
