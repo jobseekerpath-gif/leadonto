@@ -132,14 +132,8 @@ async function chooseVoice(
   voiceStyle?: string,
   gender?: "male" | "female",
 ): Promise<VoiceSelection> {
-  if (language === "English") {
-    if (getKokoroConfig()) return { languageCode: "en-US", name: KOKORO_CHARACTER_VOICES[voiceStyle ?? ""] ?? KOKORO_CHARACTER_VOICES.maya! };
-    return {
-      languageCode: LANGUAGE_CODES.English,
-      name: CHARACTER_VOICE_MAP[voiceStyle ?? ""] ?? CHARACTER_VOICE_MAP.maya!,
-    };
-  }
-
+  // English teachers must use Google's en-IN voices. Kokoro's configured
+  // voices are US-English and do not provide an Indian-English accent.
   const requestedCode = LANGUAGE_CODES[language];
   const cacheKey = `${requestedCode}:${gender ?? "any"}:${voiceStyle ?? "default"}`;
   const cached = nativeVoiceCache.get(cacheKey);
@@ -150,23 +144,31 @@ async function chooseVoice(
   const catalogVoices = (catalog.voices ?? [])
     .filter((voice) => voice.name && voice.languageCodes?.includes(requestedCode))
     .sort((a, b) => {
-      const quality = (name: string) => name.includes("Wavenet") ? 0 : name.includes("Neural2") ? 1 : 2;
-      return quality(a.name ?? "") - quality(b.name ?? "") || (a.name ?? "").localeCompare(b.name ?? "");
+      const quality = (name: string) =>
+        name.includes("Chirp3-HD") ? 0 :
+        name.includes("Wavenet") ? 1 :
+        name.includes("Neural2") ? 2 : 3;
+      return quality(a.name ?? "") - quality(b.name ?? "") ||
+        (a.name ?? "").localeCompare(b.name ?? "");
     });
-  const requestedGender = gender === "female" ? "FEMALE" : gender === "male" ? "MALE" : undefined;
+
+  const requestedGender =
+    gender === "female" ? "FEMALE" :
+    gender === "male" ? "MALE" : undefined;
   const genderMatched = requestedGender
     ? catalogVoices.filter((voice) => String(voice.ssmlGender ?? "") === requestedGender)
     : catalogVoices;
   const available = genderMatched.length > 0 ? genderMatched : catalogVoices;
 
-  // Odia and Assamese do not have a dedicated catalog entry in this
-  // environment. A valid Hindi voice is preferable to a silent/500 response.
+  // Odia and Assamese may not have dedicated catalog entries; use Hindi only
+  // when Google returns no voices for the requested language.
   const fallbackCode = available.length > 0 ? requestedCode : "hi-IN";
   const fallbackCatalog = available.length > 0
     ? available
     : ((await client.listVoices({ languageCode: fallbackCode }))[0]?.voices ?? [])
       .filter((voice) => voice.name && voice.languageCodes?.includes(fallbackCode))
       .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+
   if (fallbackCatalog.length === 0 || !fallbackCatalog[0]?.name) {
     throw new Error(`No Google Cloud TTS voice is available for ${language}`);
   }
@@ -255,12 +257,11 @@ router.post("/tts", async (req, res) => {
 });
 
 router.get("/tts/voices", (_req, res) => {
-  const useKokoro = Boolean(getKokoroConfig());
   res.json({
-    provider: useKokoro ? "kokoro" : "google-cloud-text-to-speech",
-    kokoroConfigured: useKokoro,
-    languages: useKokoro ? ["English"] : Object.keys(LANGUAGE_CODES),
-    characters: useKokoro ? KOKORO_CHARACTER_VOICES : CHARACTER_VOICE_MAP,
+    provider: "google-cloud-text-to-speech",
+    languages: Object.keys(LANGUAGE_CODES),
+    characters: CHARACTER_VOICE_MAP,
+    englishVoiceLanguageCode: "en-IN",
   });
 });
 
