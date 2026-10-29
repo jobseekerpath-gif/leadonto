@@ -1,33 +1,8 @@
-import { Router, type Response } from "express";
-import { EdgeTTS } from "node-edge-tts";
+import { Router } from "express";
 
 const router = Router();
 
-type SupportedLanguage =
-  | "English" | "Hindi" | "Tamil" | "Telugu" | "Bengali" | "Marathi"
-  | "Gujarati" | "Kannada" | "Malayalam" | "Punjabi" | "Odia"
-  | "Assamese" | "Urdu";
-
-type EdgeVoice = { lang: string; female: string; male: string };
-
-// Microsoft Edge online neural voices. No Google credentials or Kokoro API
-// keys are used. English teachers specifically use Indian English (en-IN).
-const EDGE_VOICES: Record<SupportedLanguage, EdgeVoice> = {
-  English:  { lang: "en-IN", female: "en-IN-NeerjaNeural", male: "en-IN-PrabhatNeural" },
-  Hindi:    { lang: "hi-IN", female: "hi-IN-SwaraNeural", male: "hi-IN-MadhurNeural" },
-  Tamil:    { lang: "ta-IN", female: "ta-IN-PallaviNeural", male: "ta-IN-ValluvarNeural" },
-  Telugu:   { lang: "te-IN", female: "te-IN-ShrutiNeural", male: "te-IN-MohanNeural" },
-  Bengali:  { lang: "bn-IN", female: "bn-IN-TanishaaNeural", male: "bn-IN-BashkarNeural" },
-  Marathi:  { lang: "mr-IN", female: "mr-IN-AarohiNeural", male: "mr-IN-ManoharNeural" },
-  Gujarati: { lang: "gu-IN", female: "gu-IN-DhwaniNeural", male: "gu-IN-NiranjanNeural" },
-  Kannada:  { lang: "kn-IN", female: "kn-IN-SapnaNeural", male: "kn-IN-GaganNeural" },
-  Malayalam:{ lang: "ml-IN", female: "ml-IN-SobhanaNeural", male: "ml-IN-MidhunNeural" },
-  Punjabi:  { lang: "pa-IN", female: "pa-IN-VaaniNeural", male: "pa-IN-OjasNeural" },
-  // Use Hindi neural voices where a reliable dedicated catalog is not available.
-  Odia:     { lang: "hi-IN", female: "hi-IN-SwaraNeural", male: "hi-IN-MadhurNeural" },
-  Assamese: { lang: "hi-IN", female: "hi-IN-SwaraNeural", male: "hi-IN-MadhurNeural" },
-  Urdu:     { lang: "ur-PK", female: "ur-PK-UzmaNeural", male: "ur-PK-AsadNeural" },
-};
+type SupportedLanguage = "English" | "Hindi";
 
 const CHARACTER_GENDER: Record<string, "female" | "male"> = {
   priya: "female", rohit: "male", maya: "female", arjun: "male",
@@ -37,21 +12,18 @@ const CHARACTER_GENDER: Record<string, "female" | "male"> = {
 };
 
 function isSupportedLanguage(value: string): value is SupportedLanguage {
-  return Object.prototype.hasOwnProperty.call(EDGE_VOICES, value);
+  return value === "English" || value === "Hindi";
 }
 
 function cleanForTTS(text: string): string {
   return text
     .replace(/^[A-Za-zÀ-ÿ'\s]{2,30}:\s*/m, "")
     .replace(/\b(?:Ack|Next):\s*/gi, "")
-    .replace(/\*[^*]{1,40}\*/g, "")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
     .replace(/_([^_]+)_/g, "$1")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/\([^)]{1,30}\)/g, "")
-    .replace(/^\s*["'"]/m, "")
-    .replace(/["'"]\s*$/m, "")
     .replace(/\bBFSI\b/gi, "B F S I")
     .replace(/\bCEFR\b/gi, "C E F R")
     .replace(/\bRBI\b/gi, "R B I")
@@ -64,45 +36,13 @@ function cleanForTTS(text: string): string {
     .replace(/\bMBA\b/gi, "M B A")
     .replace(/\bHR\b/gi, "H R")
     .replace(/\bAI\b/gi, "A I")
-    // Give the Hindi affirmative a clean word boundary. Without punctuation
-    // before the following word, some voices blur हाँ into “हान”.
     .replace(/(हाँ|हां)(?![,\u0964।!?])/gu, "$1,")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
 
-async function synthesize(
-  res: Response,
-  text: string,
-  voiceName: string,
-  voiceLanguageCode: string,
-): Promise<void> {
-  const tts = new EdgeTTS({
-    voice: voiceName,
-    lang: voiceLanguageCode,
-    outputFormat: "audio-24khz-96kbitrate-mono-mp3",
-    rate: "-4%",
-    timeout: 20000,
-  });
-  const chunks: Buffer[] = [];
-  for await (const chunk of tts.streamAudio(text)) {
-    if (Buffer.isBuffer(chunk)) chunks.push(chunk);
-  }
-  const audio = Buffer.concat(chunks);
-  if (!audio.length) throw new Error(`Edge TTS returned no audio for ${voiceName}`);
-  res.setHeader("Content-Type", "audio/mpeg");
-  res.setHeader("Cache-Control", "no-store");
-  res.setHeader("Content-Length", audio.length);
-  res.end(audio);
-}
-
 router.post("/tts", async (req, res) => {
-  const {
-    text,
-    language = "English",
-    voiceStyle,
-    gender,
-  } = req.body as {
+  const { text, language = "English", voiceStyle, gender } = req.body as {
     text?: string;
     language?: string;
     voiceStyle?: string;
@@ -117,40 +57,73 @@ router.post("/tts", async (req, res) => {
     res.status(400).json({ error: "Text too long (max 3000 characters)" });
     return;
   }
-  const targetLanguage = isSupportedLanguage(language) ? language : "English";
+  if (!isSupportedLanguage(language)) {
+    res.status(400).json({
+      error: "Kokoro Indian-accent TTS currently supports English and Hindi only.",
+      supportedLanguages: ["English", "Hindi"],
+    });
+    return;
+  }
+
   const cleaned = cleanForTTS(text.trim());
   if (!cleaned) {
     res.status(400).json({ error: "No speakable text" });
     return;
   }
 
+  const character = (voiceStyle ?? "maya").toLowerCase();
+  const requestedGender = gender ?? CHARACTER_GENDER[character] ?? "female";
   try {
-    const character = (voiceStyle ?? "maya").toLowerCase();
-    const profile = EDGE_VOICES[targetLanguage];
-    const requestedGender = gender ?? CHARACTER_GENDER[character] ?? "female";
-    const voiceName = profile[requestedGender];
-    await synthesize(res, cleaned, voiceName, profile.lang);
+    const response = await fetch("http://127.0.0.1:8001/synthesize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: cleaned,
+        language,
+        voice: requestedGender === "male" ? "hm_omega" : "hf_alpha",
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      req.log.error({ status: response.status, detail }, "Kokoro TTS service failed");
+      res.status(502).json({ error: "Kokoro TTS generation failed" });
+      return;
+    }
+
+    const audio = Buffer.from(await response.arrayBuffer());
+    if (!audio.length) {
+      res.status(502).json({ error: "Kokoro returned empty audio" });
+      return;
+    }
+    res.setHeader("Content-Type", "audio/wav");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Length", audio.length);
+    res.end(audio);
   } catch (err) {
-    req.log.error({ err, language: targetLanguage, voiceStyle }, "Microsoft Edge TTS failed");
-    if (!res.headersSent) res.status(500).json({ error: "Google Cloud TTS failed" });
-    else res.end();
+    req.log.error({ err, language, voiceStyle }, "Kokoro TTS request failed");
+    if (!res.headersSent) {
+      res.status(502).json({ error: "Kokoro TTS service is unavailable" });
+    }
   }
 });
 
 router.get("/tts/voices", (_req, res) => {
   res.json({
-    provider: "microsoft-edge-tts",
-    languages: Object.keys(EDGE_VOICES),
+    provider: "kokoro-indian-accent",
+    model: "Kokoro-82M",
+    languages: ["English", "Hindi"],
     englishVoiceLanguageCode: "en-IN",
-    englishVoices: { female: EDGE_VOICES.English.female, male: EDGE_VOICES.English.male },
+    englishVoices: { female: "hf_alpha", male: "hm_omega" },
     characters: Object.fromEntries(
       Object.entries(CHARACTER_GENDER).map(([character, gender]) => [
         character,
-        EDGE_VOICES.English[gender],
+        gender === "male" ? "hm_omega" : "hf_alpha",
       ]),
     ),
     googleTtsRequired: false,
-    kokoroRequired: false,
+    edgeTtsRequired: false,
   });
 });
 
