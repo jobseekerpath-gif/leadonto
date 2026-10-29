@@ -122,7 +122,7 @@ const KOKORO_CHARACTER_VOICES: Record<string,string> = { priya:"af_heart", rohit
 const nativeVoiceCache = new Map<string, VoiceSelection>();
 
 function getKokoroConfig(): { baseUrl: string; apiKey: string } | null {
-  const baseUrl = process.env.KOKORO_TTS_BASE_URL?.trim().replace(/\\/+$/, "");
+  const baseUrl = process.env.KOKORO_TTS_BASE_URL?.trim().replace(/\/+$/, "");
   const apiKey = process.env.KOKORO_API_KEY?.trim();
   return baseUrl && apiKey ? { baseUrl, apiKey } : null;
 }
