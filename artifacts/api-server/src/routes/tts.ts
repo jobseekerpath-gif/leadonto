@@ -143,7 +143,12 @@ router.get("/tts/voices", (_req, res) => {
     languages: Object.keys(EDGE_VOICES),
     englishVoiceLanguageCode: "en-IN",
     englishVoices: { female: EDGE_VOICES.English.female, male: EDGE_VOICES.English.male },
-    characters: CHARACTER_GENDER,
+    characters: Object.fromEntries(
+      Object.entries(CHARACTER_GENDER).map(([character, gender]) => [
+        character,
+        EDGE_VOICES.English[gender],
+      ]),
+    ),
     googleTtsRequired: false,
     kokoroRequired: false,
   });
