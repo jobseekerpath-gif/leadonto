@@ -71,79 +71,9 @@ function cleanForTTS(text: string): string {
     .trim();
 }
 
-function isSupportedLanguage(value: string): value is SupportedLanguage {
-  return value in LANGUAGE_CODES;
-}
-
-type VoiceSelection = { languageCode: string; name: string };
-const KOKORO_CHARACTER_VOICES: Record<string,string> = { priya:"af_heart", rohit:"am_michael", maya:"af_bella", arjun:"am_adam", neha:"af_nicole", rahul:"am_fenrir", ananya:"af_sarah", priya_coach:"af_sky", raj:"am_onyx", vikram:"am_puck", meera_coach:"af_nova", kabir:"am_echo", sanjay:"am_liam", aryan:"am_eric" };
-const nativeVoiceCache = new Map<string, VoiceSelection>();
-
-function getKokoroConfig(): { baseUrl: string; apiKey: string } | null {
-  const baseUrl = process.env.KOKORO_TTS_BASE_URL?.trim().replace(/\/+$/, "");
-  const apiKey = process.env.KOKORO_API_KEY?.trim();
-  return baseUrl && apiKey ? { baseUrl, apiKey } : null;
-}
-
-async function chooseVoice(
-  language: SupportedLanguage,
-  voiceStyle?: string,
-  gender?: "male" | "female",
-): Promise<VoiceSelection> {
-  // English teachers must use Google's en-IN voices. Kokoro's configured
-  // voices are US-English and do not provide an Indian-English accent.
-  const requestedCode = LANGUAGE_CODES[language];
-  const cacheKey = `${requestedCode}:${gender ?? "any"}:${voiceStyle ?? "default"}`;
-  const cached = nativeVoiceCache.get(cacheKey);
-  if (cached) return cached;
-
-  const client = getGoogleTtsClient();
-  const [catalog] = await client.listVoices({ languageCode: requestedCode });
-  const catalogVoices = (catalog.voices ?? [])
-    .filter((voice) => voice.name && voice.languageCodes?.includes(requestedCode))
-    .sort((a, b) => {
-      const quality = (name: string) =>
-        name.includes("Chirp3-HD") ? 0 :
-        name.includes("Wavenet") ? 1 :
-        name.includes("Neural2") ? 2 : 3;
-      return quality(a.name ?? "") - quality(b.name ?? "") ||
-        (a.name ?? "").localeCompare(b.name ?? "");
-    });
-
-  const requestedGender =
-    gender === "female" ? "FEMALE" :
-    gender === "male" ? "MALE" : undefined;
-  const genderMatched = requestedGender
-    ? catalogVoices.filter((voice) => String(voice.ssmlGender ?? "") === requestedGender)
-    : catalogVoices;
-  const available = genderMatched.length > 0 ? genderMatched : catalogVoices;
-
-  // Odia and Assamese may not have dedicated catalog entries; use Hindi only
-  // when Google returns no voices for the requested language.
-  const fallbackCode = available.length > 0 ? requestedCode : "hi-IN";
-  const fallbackCatalog = available.length > 0
-    ? available
-    : ((await client.listVoices({ languageCode: fallbackCode }))[0]?.voices ?? [])
-      .filter((voice) => voice.name && voice.languageCodes?.includes(fallbackCode))
-      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
-
-  if (fallbackCatalog.length === 0 || !fallbackCatalog[0]?.name) {
-    throw new Error(`No Google Cloud TTS voice is available for ${language}`);
-  }
-
-  const index = CHARACTER_ORDER.indexOf(
-    (voiceStyle ?? "maya") as (typeof CHARACTER_ORDER)[number],
-  );
-  const selected = fallbackCatalog[Math.max(0, index) % fallbackCatalog.length]!;
-  const selection = { languageCode: fallbackCode, name: selected.name! };
-  nativeVoiceCache.set(cacheKey, selection);
-  return selection;
-}
-
 async function synthesize(
   res: Response,
   text: string,
-  language: SupportedLanguage,
   voiceName: string,
   voiceLanguageCode: string,
 ): Promise<void> {
@@ -199,9 +129,9 @@ router.post("/tts", async (req, res) => {
     const profile = EDGE_VOICES[targetLanguage];
     const requestedGender = gender ?? CHARACTER_GENDER[character] ?? "female";
     const voiceName = profile[requestedGender];
-    await synthesize(res, cleaned, targetLanguage, voiceName, profile.lang);
+    await synthesize(res, cleaned, voiceName, profile.lang);
   } catch (err) {
-    req.log.error({ err, language: targetLanguage, voiceStyle }, "Google Cloud TTS failed");
+    req.log.error({ err, language: targetLanguage, voiceStyle }, "Microsoft Edge TTS failed");
     if (!res.headersSent) res.status(500).json({ error: "Google Cloud TTS failed" });
     else res.end();
   }
@@ -212,10 +142,7 @@ router.get("/tts/voices", (_req, res) => {
     provider: "microsoft-edge-tts",
     languages: Object.keys(EDGE_VOICES),
     englishVoiceLanguageCode: "en-IN",
-    englishVoices: {
-      female: EDGE_VOICES.English.female,
-      male: EDGE_VOICES.English.male,
-    },
+    englishVoices: { female: EDGE_VOICES.English.female, male: EDGE_VOICES.English.male },
     characters: CHARACTER_GENDER,
     googleTtsRequired: false,
     kokoroRequired: false,
