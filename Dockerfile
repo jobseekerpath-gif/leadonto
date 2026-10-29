@@ -3,6 +3,12 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
+# Install Python and Kokoro system prerequisites
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip python3-venv espeak-ng libsndfile1 && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv /opt/kokoro-venv
+ENV PATH="/opt/kokoro-venv/bin:$PATH"
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r tts-service/requirements.txt
+
 # Install pnpm
 RUN npm install -g pnpm
 
@@ -31,6 +37,9 @@ COPY --from=builder /app/artifacts/edubharat/dist/public ./artifacts/api-server/
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/artifacts/api-server/node_modules ./artifacts/api-server/node_modules
 
+# Copy Kokoro service source
+COPY --from=builder /app/tts-service ./tts-service
+
 # Set environment
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--enable-source-maps"
@@ -42,5 +51,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/api/healthz', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
 # Start the server
-CMD ["node", "--enable-source-maps", "./artifacts/api-server/dist/index.mjs"]
+CMD ["sh", "-c", "python -m uvicorn tts-service.main:app --host 127.0.0.1 --port 8001 & exec node --enable-source-maps ./artifacts/api-server/dist/index.mjs"]
 
