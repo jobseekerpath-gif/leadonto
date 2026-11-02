@@ -2,7 +2,6 @@ import { Router } from "express";
 
 const router = Router();
 
-type SupportedLanguage = "English" | "Hindi";
 const CHARACTER_GENDER: Record<string, "female" | "male"> = {
   priya: "female", rohit: "male", maya: "female", arjun: "male",
   neha: "female", rahul: "male", ananya: "female", priya_coach: "female",
@@ -10,34 +9,91 @@ const CHARACTER_GENDER: Record<string, "female" | "male"> = {
   sanjay: "male", aryan: "male",
 };
 
-function isSupportedLanguage(value: string): value is SupportedLanguage {
-  return value === "English" || value === "Hindi";
-}
+// Give existing Leadonto characters consistent, distinct Gemini studio voices.
+// Unknown characters fall back to a voice selected by gender.
+const CHARACTER_VOICE: Record<string, string> = {
+  priya: "Kore",
+  rohit: "Puck",
+  maya: "Aoede",
+  arjun: "Charon",
+  neha: "Leda",
+  rahul: "Orus",
+  ananya: "Achird",
+  priya_coach: "Sulafat",
+  raj: "Fenrir",
+  vikram: "Alnilam",
+  meera_coach: "Despina",
+  kabir: "Rasalgethi",
+  sanjay: "Sadaltager",
+  aryan: "Laomedeia",
+};
+
+const SUPPORTED_LANGUAGES = new Set([
+  "English", "Hindi", "Bangla", "Bengali", "Gujarati", "Filipino", "Finnish",
+  "Dutch", "Galician", "Georgian", "French", "Greek", "German", "Haitian Creole",
+  "Indonesian", "Hebrew", "Italian", "Hungarian", "Japanese", "Icelandic", "Korean",
+  "Javanese", "Marathi", "Kannada", "Polish", "Konkani", "Portuguese", "Lao",
+  "Romanian", "Latin", "Russian", "Latvian", "Spanish", "Lithuanian", "Tamil",
+  "Luxembourgish", "Telugu", "Macedonian", "Thai", "Malagasy", "Turkish", "Malay",
+  "Ukrainian", "Vietnamese", "Afrikaans", "Mongolian", "Albanian", "Nepali",
+  "Amharic", "Norwegian", "Armenian", "Azerbaijani", "Persian", "Punjabi",
+  "Bulgarian", "Serbian", "Burmese", "Sinhala", "Catalan", "Swahili", "Croatian",
+  "Slovak", "Czech", "Slovenian", "Danish", "Swedish", "Estonian", "Urdu",
+]);
 
 function cleanForTTS(text: string): string {
   return text
-    .replace(/^[A-Za-zÀ-ÿ'\s]{2,30}:\s*/m, "")
-    .replace(/\b(?:Ack|Next):\s*/gi, "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^[A-Za-zÀ-ÿ'\\s]{2,30}:\\s*/m, "")
+    .replace(/\\b(?:Ack|Next):\\s*/gi, "")
+    .replace(/\\*\\*([^*]+)\\*\\*/g, "$1")
+    .replace(/\\*([^*]+)\\*/g, "$1")
     .replace(/_([^_]+)_/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\([^)]{1,30}\)/g, "")
-    .replace(/\bBFSI\b/gi, "B F S I")
-    .replace(/\bCEFR\b/gi, "C E F R")
-    .replace(/\bRBI\b/gi, "R B I")
-    .replace(/\bB2B\b/gi, "business to business")
-    .replace(/\bUPI\b/gi, "U P I")
-    .replace(/\bAPI\b/gi, "A P I")
-    .replace(/\bSQL\b/gi, "S Q L")
-    .replace(/\bKPI\b/gi, "K P I")
-    .replace(/\bATS\b/gi, "A T S")
-    .replace(/\bMBA\b/gi, "M B A")
-    .replace(/\bHR\b/gi, "H R")
-    .replace(/\bAI\b/gi, "A I")
-    .replace(/(हाँ|हां)(?![,\u0964।!?])/gu, "$1,")
-    .replace(/\s{2,}/g, " ")
+    .replace(/^#{1,6}\\s+/gm, "")
+    .replace(/\\([^)]{1,30}\\)/g, "")
+    .replace(/\\bBFSI\\b/gi, "B F S I")
+    .replace(/\\bCEFR\\b/gi, "C E F R")
+    .replace(/\\bRBI\\b/gi, "R B I")
+    .replace(/\\bB2B\\b/gi, "business to business")
+    .replace(/\\bUPI\\b/gi, "U P I")
+    .replace(/\\bAPI\\b/gi, "A P I")
+    .replace(/\\bSQL\\b/gi, "S Q L")
+    .replace(/\\bKPI\\b/gi, "K P I")
+    .replace(/\\bATS\\b/gi, "A T S")
+    .replace(/\\bMBA\\b/gi, "M B A")
+    .replace(/\\bHR\\b/gi, "H R")
+    .replace(/\\bAI\\b/gi, "A I")
+    .replace(/(हाँ|हां)(?![,\\u0964।!?])/gu, "$1,")
+    .replace(/\\s{2,}/g, " ")
     .trim();
+}
+
+function styleForLanguage(language: string): string {
+  if (language === "English") {
+    return "Speak in a natural Indian English accent. Use clear pronunciation, a warm professional tone, steady conversational pacing, and natural pauses. Do not sound like a newsreader.";
+  }
+  if (language === "Hindi") {
+    return "Speak in natural conversational Hindi with clear, standard Indian Hindi pronunciation, a warm professional tone, and natural pacing.";
+  }
+  return `Speak naturally in ${language}, using fluent native pronunciation, clear diction, a warm conversational tone, and natural pacing.`;
+}
+
+function extractAudioData(payload: any): string | null {
+  if (typeof payload?.output_audio?.data === "string" && payload.output_audio.data) {
+    return payload.output_audio.data;
+  }
+
+  // The raw REST response exposes audio in the final model_output step.
+  const steps = Array.isArray(payload?.steps) ? payload.steps : [];
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const blocks = Array.isArray(steps[i]?.content) ? steps[i].content : [];
+    for (let j = blocks.length - 1; j >= 0; j--) {
+      const block = blocks[j];
+      if (block?.type === "audio" && typeof block.data === "string" && block.data) {
+        return block.data;
+      }
+    }
+  }
+  return null;
 }
 
 router.post("/tts", async (req, res) => {
@@ -48,7 +104,7 @@ router.post("/tts", async (req, res) => {
     gender?: "male" | "female";
   };
 
-  if (!text?.trim()) {
+  if (typeof text !== "string" || !text.trim()) {
     res.status(400).json({ error: "Missing 'text' field" });
     return;
   }
@@ -56,11 +112,18 @@ router.post("/tts", async (req, res) => {
     res.status(400).json({ error: "Text too long (max 3000 characters)" });
     return;
   }
-  if (!isSupportedLanguage(language)) {
+  if (typeof language !== "string" || !SUPPORTED_LANGUAGES.has(language)) {
     res.status(400).json({
-      error: "Kokoro Indian-accent TTS currently supports English and Hindi only.",
-      supportedLanguages: ["English", "Hindi"],
+      error: "This Gemini TTS model does not list the requested language as supported.",
+      supportedLanguages: Array.from(SUPPORTED_LANGUAGES),
     });
+    return;
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    req.log.error("GEMINI_API_KEY is not configured");
+    res.status(503).json({ error: "Gemini TTS is not configured on the server." });
     return;
   }
 
@@ -70,55 +133,85 @@ router.post("/tts", async (req, res) => {
     return;
   }
 
-  const character = (voiceStyle ?? "maya").toLowerCase();
-  const requestedGender = gender ?? CHARACTER_GENDER[character] ?? "female";
-  const voice = language === "Hindi"
-    ? (requestedGender === "male" ? "hm_omega" : "hf_alpha")
-    : (requestedGender === "male" ? "indian_male" : "indian_female");
+  const character = (voiceStyle ?? "").toLowerCase();
+  const requestedGender = gender === "male" || gender === "female"
+    ? gender
+    : (CHARACTER_GENDER[character] ?? "female");
+  const voice = CHARACTER_VOICE[character] ?? (requestedGender === "male" ? "Puck" : "Kore");
 
   try {
-    const response = await fetch("http://127.0.0.1:8001/synthesize", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: cleaned, language, voice }),
-      signal: AbortSignal.timeout(120000),
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        model: "gemini-3.8-flash-tts",
+        input: [{
+          type: "user_input",
+          content: [{
+            type: "text",
+            text: cleaned,
+            annotations: [{
+              type: "speech_metadata",
+              style: styleForLanguage(language),
+            }],
+          }],
+        }],
+        response_format: { type: "audio" },
+        generation_config: {
+          speech_config: [{ voice }],
+        },
+      }),
+      signal: AbortSignal.timeout(90000),
     });
 
+    const payload = await response.json().catch(() => ({})) as any;
     if (!response.ok) {
-      const detail = await response.text();
-      req.log.error({ status: response.status, detail }, "Kokoro TTS service failed");
-      res.status(502).json({ error: "Kokoro TTS generation failed" });
+      const providerMessage = typeof payload?.error?.message === "string"
+        ? payload.error.message.slice(0, 1000)
+        : "Gemini returned an unsuccessful response.";
+      req.log.error({ status: response.status, providerMessage }, "Gemini TTS request failed");
+      res.status(502).json({ error: "Gemini TTS generation failed", detail: providerMessage });
       return;
     }
 
-    const audio = Buffer.from(await response.arrayBuffer());
-    if (!audio.length) {
-      res.status(502).json({ error: "Kokoro returned empty audio" });
+    const audioBase64 = extractAudioData(payload);
+    if (!audioBase64) {
+      req.log.error({ responseKeys: Object.keys(payload ?? {}) }, "Gemini TTS returned no audio data");
+      res.status(502).json({ error: "Gemini returned no audio data." });
       return;
     }
+
+    const audio = Buffer.from(audioBase64, "base64");
+    if (audio.length < 100 || audio.subarray(0, 4).toString("ascii") !== "RIFF") {
+      req.log.error({ audioBytes: audio.length }, "Gemini TTS returned an invalid WAV payload");
+      res.status(502).json({ error: "Gemini returned an invalid audio file." });
+      return;
+    }
+
     res.setHeader("Content-Type", "audio/wav");
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Length", audio.length);
     res.end(audio);
   } catch (err) {
-    req.log.error({ err, language, voiceStyle }, "Kokoro TTS request failed");
-    if (!res.headersSent) res.status(502).json({ error: "Kokoro TTS service is unavailable" });
+    req.log.error({ err, language, voiceStyle }, "Gemini TTS request failed");
+    if (!res.headersSent) {
+      res.status(502).json({ error: "Gemini TTS service is unavailable." });
+    }
   }
 });
 
 router.get("/tts/voices", (_req, res) => {
   res.json({
-    provider: "kokoro",
-    model: "Kokoro-82M",
-    languages: ["English", "Hindi"],
+    provider: "google-gemini",
+    model: "gemini-3.8-flash-tts",
+    languages: Array.from(SUPPORTED_LANGUAGES),
     englishVoiceLanguageCode: "en-IN",
-    englishVoices: { female: "indian_female", male: "indian_male" },
-    characters: Object.fromEntries(
-      Object.entries(CHARACTER_GENDER).map(([character, gender]) => [
-        character, gender === "male" ? "indian_male" : "indian_female",
-      ]),
-    ),
-    googleTtsRequired: false,
+    englishVoices: { female: "Kore", male: "Puck" },
+    characters: CHARACTER_VOICE,
+    googleTtsRequired: true,
     edgeTtsRequired: false,
   });
 });
