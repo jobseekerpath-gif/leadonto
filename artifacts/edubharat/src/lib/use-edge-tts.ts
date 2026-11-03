@@ -514,8 +514,15 @@ function playChunkChain(
   const language = chunk.language;
   const ctrl = new AbortController();
   _abort = ctrl;
-  // Per-chunk hang guard — chunks are short, so 12s is already generous.
-  const hangTimer = setTimeout(() => { if (_abort === ctrl) ctrl.abort(); }, 12_000);
+  // Gemini TTS may take longer on a cold start or during provider congestion.
+  // Keep this below the server's 90s provider timeout, but do not abort valid
+  // WAV generation after only 12 seconds.
+  const hangTimer = setTimeout(() => {
+    if (_abort === ctrl) {
+      console.error("[TTS] Google TTS request timed out after 30 seconds");
+      ctrl.abort();
+    }
+  }, 30_000);
   const next = () => playChunkChain(chunks, index + 1, myGen, gender, options, onAllDone);
   const useFallbackThenNext = () => {
     if (myGen !== _speakGen) return;
@@ -545,6 +552,13 @@ function playChunkChain(
       clearTimeout(hangTimer);
       if (myGen !== _speakGen) return;
       if (!res.ok || ctrl.signal.aborted) {
+        const providerError = ctrl.signal.aborted
+          ? "request aborted or timed out"
+          : await res.text().catch(() => "");
+        console.error("[TTS] Google TTS API request failed", {
+          status: res.status,
+          detail: providerError.slice(0, 1200),
+        });
         // A rate-limited retry would immediately consume another rejected
         // request from the same window. Speak through the local browser voice
         // instead so the learner still hears the turn and the mic is released.
@@ -560,6 +574,15 @@ function playChunkChain(
 
       const blob = await res.blob();
       if (myGen !== _speakGen) return;
+      if (!blob.type.startsWith("audio/")) {
+        console.error("[TTS] Server returned a non-audio response", {
+          contentType: blob.type || res.headers.get("content-type") || "unknown",
+          body: (await blob.text().catch(() => "")).slice(0, 1200),
+        });
+        if (retry()) return;
+        useFallbackThenNext();
+        return;
+      }
       if (blob.size < 512) {
         console.warn("[TTS] audio blob too small (%d bytes) — skipping chunk", blob.size);
         if (retry()) return;
@@ -630,6 +653,7 @@ function playChunkChain(
         }
       };
       const failed = () => {
+        console.error("[TTS] Browser could not play the Google WAV audio blob");
         URL.revokeObjectURL(url);
         if (_url === url) _url = null;
         if (_audio === audio) _audio = null;
@@ -650,9 +674,10 @@ function playChunkChain(
         failed();
       }
     })
-    .catch(() => {
+    .catch((err) => {
       clearTimeout(hangTimer);
       if (myGen !== _speakGen) return;
+      console.error("[TTS] Google TTS fetch failed", err);
       if (retry()) return;
       useFallbackThenNext();
     });
