@@ -511,9 +511,17 @@ function detectNativeScriptLanguage(text: string, preferredLanguage: string): st
 }
 
 function detectNativeInputLanguage(text: string, preferredLanguage: string): string | null {
-  if (preferredLanguage !== "English" && isNativeLanguageTurn(text, preferredLanguage)) {
-    return preferredLanguage;
+  // The dropdown is the learner's chosen helper language. Do not silently
+  // replace Hindi with Kannada/Urdu/etc. because multilingual speech
+  // recognition may render a code-switched utterance in another script.
+  if (preferredLanguage !== "English") {
+    if (isNativeLanguageTurn(text, preferredLanguage)) return preferredLanguage;
+    return detectNativeScriptLanguage(text, preferredLanguage)
+      ? preferredLanguage
+      : null;
   }
+  // With English selected, infer the language from an explicitly native-script
+  // utterance so the tutor can still help when the learner gets stuck.
   return detectNativeScriptLanguage(text, preferredLanguage);
 }
 
@@ -1442,7 +1450,7 @@ function EnglishGuruContent({ embedded = false }: { embedded?: boolean }) {
         const languageGuidance = isEnglishNative
            ? `Speak in clear, simple, natural English throughout. Start with the substance of your reply rather than a repeated acknowledgement or filler. Use one light, natural Gen-Z phrase such as "that's legit", "honestly", "nice", "totally", or "you've got this" only when it genuinely fits — never force slang or sound like a meme.`
            : nativeInputDetected
-             ? `The learner's latest message is in ${responseHelperLanguage}. Respond directly to what they actually said, not with a vague acknowledgement or an unrelated question. Reply FIRST in two complete, natural ${responseHelperLanguage} sentences using ${responseHelperLanguage}'s standard native script. Address the learner's meaning, explain the difficulty simply, and give one concrete next step. You may add one short English practice sentence after the ${responseHelperLanguage} explanation, but do not make English the main reply.`
+             ? `The learner's selected helper language is ${responseHelperLanguage}. This is the only Indian language you may use for help, even if speech recognition transcribes the learner's words in another Indian script. Understand and answer the actual message, not a vague acknowledgement or an unrelated question. Reply FIRST in two complete, natural ${responseHelperLanguage} sentences using its standard native script. Address the learner's meaning, explain the difficulty simply, and give one concrete next step. You may add one short English practice sentence after the ${responseHelperLanguage} explanation, but do not make English the main reply.`
            : `The student's ONLY helper language is ${uiLang} — do NOT use any other Indian language (not Hindi, not Kannada, not Tamil, not any other — ONLY ${uiLang} when needed). English is the goal, so speak MOSTLY in simple, clear English and keep them practicing. But use ${uiLang} as a warm helping hand whenever they need it: if the student replies in ${uiLang}, tells you (in any language) that they didn't understand, or clearly seems confused, briefly explain the tricky word or idea in ${uiLang}, then continue in English. You may give a short ${uiLang} explanation when it genuinely helps, but never put it in quotation marks or brackets. When the student asks you to speak, say, or translate an English sentence in ${uiLang} — including phrases like "say this in ${uiLang}" or "can you speak this in ${uiLang}" — translate that exact sentence into natural ${uiLang} immediately and say the translation. Do not answer that request with a generic recovery phrase or an English practice prompt. When the student explicitly asks what an English word or sentence MEANS in ${uiLang} (or asks you to translate or explain it in ${uiLang}), immediately give that meaning written MOSTLY in ${uiLang} — keep English down to just the word being explained — so it is spoken aloud in a natural ${uiLang} accent; keep that reply short and focused on the meaning, then switch straight back to English in your very next reply. Never guess, reinterpret, or expand an unclear or possibly misheard word or acronym. Never discuss transcription errors or invent meanings unless the student clearly said them. If you are unsure, ask one short clarification in ${uiLang} without quoting the unclear phrase. Never leave them stuck or embarrassed — slow down, simplify, and lean on ${uiLang} to unblock them, then gently guide them back to English. When they're managing fine in English, keep your whole reply in English.`;
 
         const nativeScriptQuality = !isEnglishNative
@@ -1550,7 +1558,7 @@ Rules for spoken replies:
         ) {
           const nativeRetry = await stream(
             `${recentHistory}\n${teacherShort}:`,
-            `You are ${teacherShort}, a warm Indian English coach. The learner's latest message is in ${responseHelperLanguage}. Answer the actual latest message now. Return two complete, useful sentences in natural ${responseHelperLanguage} using ${responseHelperLanguage}'s standard native script. Be specific and practical, not vague. Do not say only that you understand, do not ask what the learner means unless the message is genuinely unintelligible, and do not switch to English before addressing the learner in ${responseHelperLanguage}. You may add one short English practice example after the native-language answer. Never use another Indian language, transliteration, isolated script letters, markdown, or bullet points.`,
+            `You are ${teacherShort}, a warm Indian English coach. The learner's selected helper language is ${responseHelperLanguage}. The speech transcript may contain a different Indian script; still answer in the selected helper language. Answer the actual latest message now. Return two complete, useful sentences in natural ${responseHelperLanguage} using its standard native script. Be specific and practical, not vague. Do not say only that you understand, do not ask what the learner means unless the message is genuinely unintelligible, and do not switch to English before addressing the learner in ${responseHelperLanguage}. You may add one short English practice example after the native-language answer. Never use another Indian language, transliteration, isolated script letters, markdown, or bullet points.`,
             undefined,
             {
               endpoint: "/api/ai/conversation",
