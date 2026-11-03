@@ -130,7 +130,9 @@ router.post("/tts", async (req, res) => {
     return;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  // Match the aliases already accepted by the main Gemini chat route.
+  // Railway projects sometimes have the space-separated legacy variable.
+  const apiKey = process.env["GEMINI_API_KEY"] ?? process.env["GEMINI API KEY"];
   if (!apiKey) {
     req.log.error("GEMINI_API_KEY is not configured");
     res.status(503).json({ error: "Gemini TTS is not configured on the server." });
