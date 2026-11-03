@@ -78,19 +78,29 @@ function styleForLanguage(language: string): string {
 }
 
 function extractAudioData(payload: any): string | null {
-  if (typeof payload?.output_audio?.data === "string" && payload.output_audio.data) {
-    return payload.output_audio.data;
-  }
+  const direct = payload?.output_audio?.data ?? payload?.outputAudio?.data;
+  if (typeof direct === "string" && direct) return direct;
 
-  // The raw REST response exposes audio in the final model_output step.
+  // Raw Interactions REST responses carry inline audio in
+  // steps[].content[].data. Accept the documented audio block and the
+  // data-only variant returned by some API response envelopes.
   const steps = Array.isArray(payload?.steps) ? payload.steps : [];
   for (let i = steps.length - 1; i >= 0; i--) {
     const blocks = Array.isArray(steps[i]?.content) ? steps[i].content : [];
     for (let j = blocks.length - 1; j >= 0; j--) {
       const block = blocks[j];
-      if (block?.type === "audio" && typeof block.data === "string" && block.data) {
+      const isAudio = block?.type === "audio"
+        || String(block?.mime_type ?? block?.mimeType ?? "").startsWith("audio/");
+      if (isAudio && typeof block?.data === "string" && block.data) {
         return block.data;
       }
+    }
+    // This endpoint is requested in audio-only mode, so a data-only final
+    // content block is safe to treat as the requested audio if type metadata
+    // was omitted by the response envelope.
+    for (let j = blocks.length - 1; j >= 0; j--) {
+      const block = blocks[j];
+      if (typeof block?.data === "string" && block.data) return block.data;
     }
   }
   return null;
@@ -159,7 +169,12 @@ router.post("/tts", async (req, res) => {
             }],
           }],
         }],
-        response_format: { type: "audio" },
+        response_format: {
+          type: "audio",
+          mime_type: "audio/wav",
+          delivery: "inline",
+          sample_rate: 24000,
+        },
         generation_config: {
           speech_config: [{ voice }],
         },
