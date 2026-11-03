@@ -1721,6 +1721,8 @@ Rules for spoken replies:
            // the reply when we pass the helper language; `language: "English"` keeps
            // the English runs on the tutor voice.
           speakRef.current(cleanResponse, "English", releaseTurn, {
+            voiceGender: tutor.voiceGender,
+            voiceStyle: tutor.voiceStyle,
             rate: 1.0,
             nativeLanguage: replyUsesNativeLanguage ? replyNativeLanguage : undefined,
             forceNativeLanguage: nativeInputDetected || translationRequested || isDirectLanguageRequest,
