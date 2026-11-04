@@ -1067,6 +1067,37 @@ export async function generateTextWithFallback(opts: {
   return full;
 }
 
+// Provider configuration diagnostics intentionally expose only whether a
+// credential exists, never the credential value. This lets deployment checks
+// distinguish missing Railway variables from provider-side model failures.
+router.get("/ai/health", (_req, res) => {
+  const geminiConfigured = Boolean(
+    process.env["GEMINI_API_KEY"]
+    ?? process.env["GEMINI API KEY"]
+    ?? process.env["GOOGLE_VERTEX_SERVICE_ACCOUNT_JSON"],
+  );
+  const claudeConfigured = Boolean(process.env["ANTHROPIC_API_KEY"]);
+  const mistralConfigured = Boolean(
+    process.env["MISTRAL_API_KEY"] ?? process.env["MISTRAL API KEY"],
+  );
+  const groqConfigured = Boolean(
+    process.env["GROQ_API_KEY"] ?? process.env["GROQ API KEY"],
+  );
+  res.json({
+    status: claudeConfigured || mistralConfigured || groqConfigured || geminiConfigured
+      ? "ready"
+      : "misconfigured",
+    providers: {
+      claude: claudeConfigured,
+      mistral: mistralConfigured,
+      groq: groqConfigured,
+      gemini: geminiConfigured,
+    },
+    liveConversationChain: ["claude", "mistral", "groq"],
+    interviewChain: ["claude", "mistral", "groq"],
+  });
+});
+
 // ---------------------------------------------------------------------------
 // GET /ai/web-context?q=<query>
 // Fetches a brief web context snippet from DuckDuckGo Instant Answer API
