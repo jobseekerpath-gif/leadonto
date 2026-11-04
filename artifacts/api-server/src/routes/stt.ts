@@ -178,8 +178,8 @@ async function transcribeWithGemini(
   });
   return (response.text ?? "")
     .trim()
-    .replace(/^\`\`\`(?:text)?\\s*/i, "")
-    .replace(/\\s*\`\`\`$/i, "")
+    .replace(/^```(?:text)?\s*/i, "")
+    .replace(/\s*```$/i, "")
     .trim();
 }
 
