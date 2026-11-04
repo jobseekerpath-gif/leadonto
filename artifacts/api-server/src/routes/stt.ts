@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { SpeechClient } from "@google-cloud/speech";
 import multer from "multer";
+import { getAI } from "./ai.js";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -12,7 +13,32 @@ const upload = multer({
 // Keep a lightweight HTTP response as well so the artifact health probe does
 // not report a false 500/failed service while WebSocket clients are healthy.
 router.get("/stt/live", (_req: Request, res: Response) => {
-  res.json({ status: "ready", transport: "websocket" });
+  res.json({
+    status: "ready",
+    transport: "websocket",
+    deepgramConfigured: Boolean(process.env["DEEPGRAM_API_KEY"]),
+  });
+});
+
+router.get("/stt/health", (_req: Request, res: Response) => {
+  const geminiConfigured = Boolean(
+    process.env["GEMINI_API_KEY"]
+    ?? process.env["GEMINI API KEY"]
+    ?? process.env["GOOGLE_VERTEX_SERVICE_ACCOUNT_JSON"],
+  );
+  const googleSpeechConfigured = Boolean(
+    process.env["GOOGLE_CLOUD_SPEECH_SERVICE_ACCOUNT_JSON"]
+    ?? process.env["GOOGLE_CLOUD_TTS_SERVICE_ACCOUNT_JSON"],
+  );
+  const deepgramConfigured = Boolean(process.env["DEEPGRAM_API_KEY"]);
+  res.json({
+    status: deepgramConfigured || googleSpeechConfigured || geminiConfigured ? "ready" : "misconfigured",
+    providers: {
+      deepgram: deepgramConfigured,
+      googleCloudSpeech: googleSpeechConfigured,
+      geminiFallback: geminiConfigured,
+    },
+  });
 });
 
 const LANGUAGE_CODES: Record<string, string> = {
@@ -51,7 +77,9 @@ function isLikelyCorruptedIndicTranscript(text: string, language: string): boole
 
 function getGoogleSpeechClient(): SpeechClient {
   if (googleSpeechClient) return googleSpeechClient;
-  const rawCredentials = process.env.GOOGLE_CLOUD_TTS_SERVICE_ACCOUNT_JSON;
+  const rawCredentials =
+    process.env["GOOGLE_CLOUD_SPEECH_SERVICE_ACCOUNT_JSON"]
+    ?? process.env["GOOGLE_CLOUD_TTS_SERVICE_ACCOUNT_JSON"];
   if (!rawCredentials) {
     throw new Error("GOOGLE_CLOUD_TTS_SERVICE_ACCOUNT_JSON is not configured");
   }
@@ -107,6 +135,52 @@ async function transcribeWithGoogleCloud(
     throw new Error("Google Cloud returned a low-quality native-language transcript");
   }
   return transcript;
+}
+
+async function transcribeWithGemini(
+  buffer: Buffer,
+  mimeType: string,
+  language: string,
+): Promise<string> {
+  const audioMimeType = mimeType.toLowerCase().includes("mp4")
+    ? "audio/mp4"
+    : mimeType.toLowerCase().includes("ogg")
+      ? "audio/ogg"
+      : "audio/webm";
+  const languageInstruction = language === "English"
+    ? "The learner may code-switch between English and an Indian language. Preserve every spoken language and use its normal written script."
+    : `The selected language is ${language}. Preserve the words as spoken; do not translate them into English.`;
+  const prompt = [
+    "Transcribe the attached microphone recording exactly as spoken.",
+    languageInstruction,
+    "Do not translate, summarize, correct grammar, answer questions, or invent missing words.",
+    "Return only the transcript. If no intelligible speech is present, return an empty response.",
+  ].join(" ");
+
+  const response = await getAI().models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: [{
+      role: "user",
+      parts: [
+        { text: prompt },
+        {
+          inlineData: {
+            mimeType: audioMimeType,
+            data: buffer.toString("base64"),
+          },
+        },
+      ],
+    }],
+    config: {
+      maxOutputTokens: 1024,
+      temperature: 0,
+    },
+  });
+  return (response.text ?? "")
+    .trim()
+    .replace(/^\`\`\`(?:text)?\\s*/i, "")
+    .replace(/\\s*\`\`\`$/i, "")
+    .trim();
 }
 
 function getDeepgramLanguage(language: string): string {
@@ -200,7 +274,13 @@ router.post("/stt", upload.single("audio"), async (req: Request, res: Response) 
   // stronger. Both providers are attempted before the AI fallback.
   const google = { name: "Google Cloud", run: () => transcribeWithGoogleCloud(req.file!.buffer, mimeType, language) };
   const deepgram = { name: "Deepgram Nova-3", run: () => transcribeWithDeepgram(req.file!.buffer, mimeType, language) };
-  const providers = language === "English" ? [deepgram, google] : [google, deepgram];
+  // Gemini uses the same API key already used by chat and TTS, so it remains
+  // a working transcription fallback even when Deepgram or Cloud Speech
+  // credentials have not been added to Railway.
+  const gemini = { name: "Gemini Flash audio transcription", run: () => transcribeWithGemini(req.file!.buffer, mimeType, language) };
+  const providers = language === "English"
+    ? [deepgram, google, gemini]
+    : [google, deepgram, gemini];
 
   for (const provider of providers) {
     try {
