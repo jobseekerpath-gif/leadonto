@@ -1534,12 +1534,12 @@ Rules for spoken replies:
 - NEVER start your reply with your name or any label like "Teacher:".
 - Prefer pronounceable spoken forms for acronyms and workplace terms. Say "A I", "H R", "R B I", or "business to business" rather than rushing compressed letter strings.
 - Always finish your thought — never cut off mid-sentence.
-- If asked about news, sports, films, prices, or current events: answer confidently using "from what I know" or "last I heard". Do NOT say you have no internet. Your knowledge is up to early 2025; for very recent things, say "I may not have the very latest, but…".${webContextNote}${translationInstruction}${explicitTranslationDirective}`,
+- If asked about news, sports, films, prices, or current events: use supplied live context when available. Without current context, say briefly that the information may have changed and avoid guessing.${webContextNote}${translationInstruction}${explicitTranslationDirective}`,
           undefined,
             {
               endpoint: "/api/ai/conversation",
               maxTokens: nativeInputDetected ? 180 : 100,
-               timeoutMs: nativeInputDetected ? 9000 : 4500,
+               timeoutMs: nativeInputDetected ? 12_000 : 10_000,
               responseLanguage: responseHelperLanguage,
               nativeInputDetected,
             },
@@ -1563,7 +1563,7 @@ Rules for spoken replies:
             {
               endpoint: "/api/ai/conversation",
               maxTokens: 180,
-               timeoutMs: 8000,
+               timeoutMs: 10_000,
               responseLanguage: responseHelperLanguage,
               nativeInputDetected: true,
             },
@@ -1706,7 +1706,7 @@ Rules for spoken replies:
           // language chunk to finish before treating TTS as stuck.
           // Audio completion is normally released by TTS onEnd. Keep a short
           // watchdog so a missing audio callback cannot strand the mic.
-          const safetyMs = Math.max(cleanResponse.length * 70 + 4_000, 6_000);
+          const safetyMs = Math.max(cleanResponse.length * 70 + 8_000, 35_000);
           speakSafetyTimerRef.current = setTimeout(releaseTurn, safetyMs);
           // Voice the reply in English by default — the AI is instructed to speak
           // MOSTLY English here, so a native neural voice (e.g. Malayalam) reading
