@@ -878,10 +878,11 @@ function InterviewAceContent() {
       // Clear any previous safety timer before starting fresh
       if (coachSafetyTimerRef.current) { clearTimeout(coachSafetyTimerRef.current); coachSafetyTimerRef.current = null; }
       setCoachSpeaking(true);
-      // 50 ms/char + 5 s base, minimum 16 s (just after the 15 s TTS hang-abort).
-      // When this fires it means TTS hung — release the 10-min mic block that
-      // speech.pause() set so the auto-listen effect can restart the mic.
-      const safetyMs = Math.max(text.length * 50 + 5_000, 16_000);
+      // Google TTS requests can take up to 20 seconds before browser-voice
+      // fallback begins. Keep the microphone blocked long enough for either
+      // Google audio or the fallback voice to finish.
+
+      const safetyMs = Math.max(text.length * 70 + 8_000, 35_000);
       coachSafetyTimerRef.current = setTimeout(() => {
         coachSafetyTimerRef.current = null;
           // Pre-warm the recorder immediately, but ignore speaker echo for
@@ -1495,7 +1496,7 @@ ${questionFrameworkFor(typeMeta.value, interviewRoleLabel, experience, profile.i
         voiceStyle: coach.voiceStyle,
         pitch: coach.gender === "male" ? 0.88 : 1.08,
       });
-    }, 4_200);
+    }, 11_500);
     clearAutoSubmitTimer();
     setIsRecording(false);
     speech.stop();
@@ -1602,7 +1603,7 @@ ${questionFrameworkFor(typeMeta.value, interviewRoleLabel, experience, profile.i
     })();
     const turnStartedAt = performance.now();
       const minWaitPromise = new Promise<void>((resolve) => setTimeout(resolve, 180));
-        const STREAM_DEADLINE_MS = 4_500;
+        const STREAM_DEADLINE_MS = 10_500;
     let streamTimedOut = false;
     const streamDeadlinePromise = new Promise<string>(resolve =>
       setTimeout(() => { streamTimedOut = true; resolve(""); }, STREAM_DEADLINE_MS)
@@ -1663,7 +1664,7 @@ Output format — exactly one line, nothing else:
 Next: <the interview question only, may start with a short natural bridge>`,
            `You are ${displayCoachName}, ${coach.role}. ${coach.style} ${coach.promptStyle} You are the domain-specialist interviewer for ${interviewRoleLabel}. Treat ${interviewRoleLabel} as the authoritative target role and ask questions grounded in its real work, tools, decisions, risks and success measures. You conduct a professional but warm, personable interview that covers a BROAD range of areas and never fixates on one topic. Speak like a real person in a live interview: use contractions, natural rhythm, short spoken phrases, and simple everyday English. React briefly to a concrete detail from the candidate's answer before the next question when it feels natural. Use full spoken forms for acronyms and business terms where possible (say "R B I", "H R", or "A I", not compressed letter strings). Introduce yourself by name only; never call yourself Sir, Ma'am, or Madam. Keep the tone focused on the interview rather than casual conversation. Avoid scripted corporate phrases, repeated praise, and report-like wording. Use light humour only when it fits; never sarcasm, never at the candidate's expense. Never use markdown or action words.`,
           undefined,
-            { endpoint: "/api/ai/stream?provider=quality", maxTokens: 140, timeoutMs: 4_500 }
+            { endpoint: "/api/ai/stream?provider=quality", maxTokens: 180, timeoutMs: 10_000 }
         ),
         streamDeadlinePromise,
       ]);
