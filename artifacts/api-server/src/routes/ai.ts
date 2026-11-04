@@ -284,8 +284,17 @@ function retryDelayMs(err: unknown): number {
 type QualityProvider = "claude" | "groq" | "mistral";
 const qualityProviderBackoffUntil = new Map<QualityProvider, number>();
 
+function isQualityProviderConfigured(provider: QualityProvider): boolean {
+  if (provider === "claude") return Boolean(process.env["ANTHROPIC_API_KEY"]);
+  if (provider === "mistral") {
+    return Boolean(process.env["MISTRAL_API_KEY"] ?? process.env["MISTRAL API KEY"]);
+  }
+  return Boolean(process.env["GROQ_API_KEY"] ?? process.env["GROQ API KEY"]);
+}
+
 function isQualityProviderReady(provider: QualityProvider): boolean {
-  return (qualityProviderBackoffUntil.get(provider) ?? 0) <= Date.now();
+  return isQualityProviderConfigured(provider)
+    && (qualityProviderBackoffUntil.get(provider) ?? 0) <= Date.now();
 }
 
 function pauseQualityProvider(provider: QualityProvider, err: unknown) {
@@ -659,21 +668,44 @@ router.post("/ai/stream", async (req, res) => {
           req.log.warn({ err: mistralErr }, "Mistral quality fallback failed — falling back to Groq");
         }
       }
-      await streamGroq(req, res, prompt, system, tokens, state);
+      if (isQualityProviderReady("groq")) {
+        try {
+          await streamGroq(req, res, prompt, system, tokens, state);
+          return;
+        } catch (groqErr) {
+          if (state.wrote) throw groqErr;
+          pauseQualityProvider("groq", groqErr);
+          req.log.warn({ err: groqErr }, "Groq quality stream failed — trying Gemini");
+        }
+      }
+      await streamGemini(req, res, prompt, system, tokens, state);
       return;
     }
     // Live Conversation opts into Groq directly so unavailable Claude/Gemini
     // providers cannot consume the browser's short live-turn timeout first.
     if (preferGroq) {
-      try {
-        await streamGroq(req, res, prompt, system, tokens, state);
-        return;
-      } catch (groqErr) {
-        if (state.wrote) throw groqErr;
-        req.log.warn({ err: groqErr }, "Groq live stream failed — falling back to Mistral");
-        await streamMistral(req, res, prompt, system, tokens, state);
-        return;
+      if (isQualityProviderReady("groq")) {
+        try {
+          await streamGroq(req, res, prompt, system, tokens, state);
+          return;
+        } catch (groqErr) {
+          if (state.wrote) throw groqErr;
+          pauseQualityProvider("groq", groqErr);
+          req.log.warn({ err: groqErr }, "Groq live stream failed — falling back to Mistral");
+        }
       }
+      if (isQualityProviderReady("mistral")) {
+        try {
+          await streamMistral(req, res, prompt, system, tokens, state);
+          return;
+        } catch (mistralErr) {
+          if (state.wrote) throw mistralErr;
+          pauseQualityProvider("mistral", mistralErr);
+          req.log.warn({ err: mistralErr }, "Mistral live stream failed — trying Gemini");
+        }
+      }
+      await streamGemini(req, res, prompt, system, tokens, state);
+      return;
     }
     // Claude is the reliable primary. Gemini's free tier is frequently quota-
     // exhausted (429) or 404s on unavailable models, which adds a multi-second
@@ -757,7 +789,17 @@ router.post("/ai/conversation", async (req, res) => {
         req.log.warn({ err: mistralError }, "Mistral conversation fallback failed — falling back to Groq");
       }
     }
-    await streamGroq(req, res, prompt, system, maxTokens ?? 8192, state);
+    if (isQualityProviderReady("groq")) {
+      try {
+        await streamGroq(req, res, prompt, system, maxTokens ?? 8192, state);
+        return;
+      } catch (groqError) {
+        if (state.wrote) throw groqError;
+        pauseQualityProvider("groq", groqError);
+        req.log.warn({ err: groqError }, "Groq conversation failed — falling back to Gemini");
+      }
+    }
+    await streamGemini(req, res, prompt, system, maxTokens ?? 8192, state);
   } catch (err) {
     req.log.error({ err }, "Conversation provider chain failed");
     if (!state.wrote) {
@@ -1066,6 +1108,41 @@ export async function generateTextWithFallback(opts: {
   }
   return full;
 }
+
+// Provider configuration diagnostics intentionally expose only whether a
+// credential exists, never the credential value. This lets deployment checks
+// distinguish missing Railway variables from provider-side model failures.
+router.get("/ai/health", (_req, res) => {
+  const geminiConfigured = Boolean(
+    process.env["GEMINI_API_KEY"]
+    ?? process.env["GEMINI API KEY"]
+    ?? process.env["GOOGLE_VERTEX_SERVICE_ACCOUNT_JSON"],
+  );
+  const claudeConfigured = Boolean(process.env["ANTHROPIC_API_KEY"]);
+  const mistralConfigured = Boolean(
+    process.env["MISTRAL_API_KEY"] ?? process.env["MISTRAL API KEY"],
+  );
+  const groqConfigured = Boolean(
+    process.env["GROQ_API_KEY"] ?? process.env["GROQ API KEY"],
+  );
+  const availableChain = [
+    ...(claudeConfigured ? ["claude"] : []),
+    ...(mistralConfigured ? ["mistral"] : []),
+    ...(groqConfigured ? ["groq"] : []),
+    ...(geminiConfigured ? ["gemini"] : []),
+  ];
+  res.json({
+    status: availableChain.length ? "ready" : "misconfigured",
+    providers: {
+      claude: claudeConfigured,
+      mistral: mistralConfigured,
+      groq: groqConfigured,
+      gemini: geminiConfigured,
+    },
+    liveConversationChain: availableChain,
+    interviewChain: availableChain,
+  });
+});
 
 // ---------------------------------------------------------------------------
 // GET /ai/web-context?q=<query>

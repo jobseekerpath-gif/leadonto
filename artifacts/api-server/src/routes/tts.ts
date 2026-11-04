@@ -174,7 +174,6 @@ router.post("/tts", async (req, res) => {
         response_format: {
           type: "audio",
           mime_type: "audio/wav",
-          delivery: "inline",
           sample_rate: 24000,
         },
         generation_config: {
@@ -224,6 +223,9 @@ router.get("/tts/voices", (_req, res) => {
   res.json({
     provider: "google-gemini",
     model: "gemini-3.8-flash-tts",
+    endpoint: "https://generativelanguage.googleapis.com/v1beta/interactions",
+    configured: Boolean(process.env["GEMINI_API_KEY"] ?? process.env["GEMINI API KEY"]),
+    audioFormat: "audio/wav",
     languages: Array.from(SUPPORTED_LANGUAGES),
     englishVoiceLanguageCode: "en-IN",
     englishVoices: { female: "Kore", male: "Puck" },

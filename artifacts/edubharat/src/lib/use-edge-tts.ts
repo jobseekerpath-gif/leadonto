@@ -522,7 +522,7 @@ function playChunkChain(
       console.error("[TTS] Google TTS request timed out after 30 seconds");
       ctrl.abort();
     }
-  }, 30_000);
+  }, 20_000);
   const next = () => playChunkChain(chunks, index + 1, myGen, gender, options, onAllDone);
   const useFallbackThenNext = () => {
     if (myGen !== _speakGen) return;
@@ -564,6 +564,12 @@ function playChunkChain(
         // instead so the learner still hears the turn and the mic is released.
         if (!ctrl.signal.aborted && res.status === 429) {
           console.warn("[TTS] server rate limited; using browser voice fallback");
+          useFallbackThenNext();
+          return;
+        }
+        // Client/configuration errors cannot be fixed by repeating the same
+        // request. Keep one retry only for transient server-side failures.
+        if (!ctrl.signal.aborted && res.status >= 400 && res.status < 500) {
           useFallbackThenNext();
           return;
         }
@@ -678,7 +684,10 @@ function playChunkChain(
       clearTimeout(hangTimer);
       if (myGen !== _speakGen) return;
       console.error("[TTS] Google TTS fetch failed", err);
-      if (retry()) return;
+      // A timeout already consumed the full provider wait window. Retrying an
+      // aborted request doubles the delay and can reopen the microphone while
+      // a stale audio request is still in flight.
+      if (!(err instanceof Error && err.name === "AbortError") && retry()) return;
       useFallbackThenNext();
     });
 }
