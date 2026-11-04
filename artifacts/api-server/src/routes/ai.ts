@@ -668,35 +668,44 @@ router.post("/ai/stream", async (req, res) => {
           req.log.warn({ err: mistralErr }, "Mistral quality fallback failed — falling back to Groq");
         }
       }
-      try {
-        await streamGroq(req, res, prompt, system, tokens, state);
-        return;
-      } catch (groqErr) {
-        if (state.wrote) throw groqErr;
-        req.log.warn({ err: groqErr }, "Groq quality stream failed — trying Gemini");
-        await streamGemini(req, res, prompt, system, tokens, state);
-        return;
+      if (isQualityProviderReady("groq")) {
+        try {
+          await streamGroq(req, res, prompt, system, tokens, state);
+          return;
+        } catch (groqErr) {
+          if (state.wrote) throw groqErr;
+          pauseQualityProvider("groq", groqErr);
+          req.log.warn({ err: groqErr }, "Groq quality stream failed — trying Gemini");
+        }
       }
+      await streamGemini(req, res, prompt, system, tokens, state);
+      return;
     }
     // Live Conversation opts into Groq directly so unavailable Claude/Gemini
     // providers cannot consume the browser's short live-turn timeout first.
     if (preferGroq) {
-      try {
-        await streamGroq(req, res, prompt, system, tokens, state);
-        return;
-      } catch (groqErr) {
-        if (state.wrote) throw groqErr;
-        req.log.warn({ err: groqErr }, "Groq live stream failed — falling back to Mistral");
+      if (isQualityProviderReady("groq")) {
+        try {
+          await streamGroq(req, res, prompt, system, tokens, state);
+          return;
+        } catch (groqErr) {
+          if (state.wrote) throw groqErr;
+          pauseQualityProvider("groq", groqErr);
+          req.log.warn({ err: groqErr }, "Groq live stream failed — falling back to Mistral");
+        }
+      }
+      if (isQualityProviderReady("mistral")) {
         try {
           await streamMistral(req, res, prompt, system, tokens, state);
           return;
         } catch (mistralErr) {
           if (state.wrote) throw mistralErr;
+          pauseQualityProvider("mistral", mistralErr);
           req.log.warn({ err: mistralErr }, "Mistral live stream failed — trying Gemini");
-          await streamGemini(req, res, prompt, system, tokens, state);
-          return;
         }
       }
+      await streamGemini(req, res, prompt, system, tokens, state);
+      return;
     }
     // Claude is the reliable primary. Gemini's free tier is frequently quota-
     // exhausted (429) or 404s on unavailable models, which adds a multi-second
@@ -780,13 +789,17 @@ router.post("/ai/conversation", async (req, res) => {
         req.log.warn({ err: mistralError }, "Mistral conversation fallback failed — falling back to Groq");
       }
     }
-    try {
-      await streamGroq(req, res, prompt, system, maxTokens ?? 8192, state);
-    } catch (groqError) {
-      if (state.wrote) throw groqError;
-      req.log.warn({ err: groqError }, "Groq conversation failed — falling back to Gemini");
-      await streamGemini(req, res, prompt, system, maxTokens ?? 8192, state);
+    if (isQualityProviderReady("groq")) {
+      try {
+        await streamGroq(req, res, prompt, system, maxTokens ?? 8192, state);
+        return;
+      } catch (groqError) {
+        if (state.wrote) throw groqError;
+        pauseQualityProvider("groq", groqError);
+        req.log.warn({ err: groqError }, "Groq conversation failed — falling back to Gemini");
+      }
     }
+    await streamGemini(req, res, prompt, system, maxTokens ?? 8192, state);
   } catch (err) {
     req.log.error({ err }, "Conversation provider chain failed");
     if (!state.wrote) {
