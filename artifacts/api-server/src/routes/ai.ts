@@ -284,8 +284,17 @@ function retryDelayMs(err: unknown): number {
 type QualityProvider = "claude" | "groq" | "mistral";
 const qualityProviderBackoffUntil = new Map<QualityProvider, number>();
 
+function isQualityProviderConfigured(provider: QualityProvider): boolean {
+  if (provider === "claude") return Boolean(process.env["ANTHROPIC_API_KEY"]);
+  if (provider === "mistral") {
+    return Boolean(process.env["MISTRAL_API_KEY"] ?? process.env["MISTRAL API KEY"]);
+  }
+  return Boolean(process.env["GROQ_API_KEY"] ?? process.env["GROQ API KEY"]);
+}
+
 function isQualityProviderReady(provider: QualityProvider): boolean {
-  return (qualityProviderBackoffUntil.get(provider) ?? 0) <= Date.now();
+  return isQualityProviderConfigured(provider)
+    && (qualityProviderBackoffUntil.get(provider) ?? 0) <= Date.now();
 }
 
 function pauseQualityProvider(provider: QualityProvider, err: unknown) {
@@ -1103,18 +1112,22 @@ router.get("/ai/health", (_req, res) => {
   const groqConfigured = Boolean(
     process.env["GROQ_API_KEY"] ?? process.env["GROQ API KEY"],
   );
+  const availableChain = [
+    ...(claudeConfigured ? ["claude"] : []),
+    ...(mistralConfigured ? ["mistral"] : []),
+    ...(groqConfigured ? ["groq"] : []),
+    ...(geminiConfigured ? ["gemini"] : []),
+  ];
   res.json({
-    status: claudeConfigured || mistralConfigured || groqConfigured || geminiConfigured
-      ? "ready"
-      : "misconfigured",
+    status: availableChain.length ? "ready" : "misconfigured",
     providers: {
       claude: claudeConfigured,
       mistral: mistralConfigured,
       groq: groqConfigured,
       gemini: geminiConfigured,
     },
-    liveConversationChain: ["claude", "mistral", "groq", "gemini"],
-    interviewChain: ["claude", "mistral", "groq", "gemini"],
+    liveConversationChain: availableChain,
+    interviewChain: availableChain,
   });
 });
 
