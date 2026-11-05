@@ -77,6 +77,32 @@ function styleForLanguage(language: string): string {
   return `Speak naturally in ${language}, using fluent native pronunciation, clear diction, a warm conversational tone, and natural pacing.`;
 }
 
+function pcmToWav(pcm: Buffer, sampleRate = 24_000, channels = 1): Buffer {
+  // Gemini TTS returns raw 24 kHz, 16-bit little-endian PCM. Browsers need
+  // a WAV container; Google's SDK examples explicitly write the PCM into WAV.
+  // Preserve an already-containerized WAV defensively.
+  if (pcm.length >= 44 && pcm.subarray(0, 4).toString("ascii") === "RIFF") {
+    return pcm;
+  }
+  const bytesPerSample = 2;
+  const blockAlign = channels * bytesPerSample;
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0, "ascii");
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii");
+  header.writeUInt32LE(16, 16); // PCM format chunk size
+  header.writeUInt16LE(1, 20); // Linear PCM
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * blockAlign, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bytesPerSample * 8, 34);
+  header.write("data", 36, "ascii");
+  header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+
 function extractAudioData(payload: any): string | null {
   const direct = payload?.output_audio?.data ?? payload?.outputAudio?.data;
   if (typeof direct === "string" && direct) return direct;
@@ -171,11 +197,7 @@ router.post("/tts", async (req, res) => {
             }],
           }],
         }],
-        response_format: {
-          type: "audio",
-          mime_type: "audio/wav",
-          sample_rate: 24000,
-        },
+        response_format: { type: "audio" },
         generation_config: {
           speech_config: [{ voice }],
         },
@@ -200,12 +222,21 @@ router.post("/tts", async (req, res) => {
       return;
     }
 
-    const audio = Buffer.from(audioBase64, "base64");
-    if (audio.length < 100 || audio.subarray(0, 4).toString("ascii") !== "RIFF") {
-      req.log.error({ audioBytes: audio.length }, "Gemini TTS returned an invalid WAV payload");
-      res.status(502).json({ error: "Gemini returned an invalid audio file." });
+    const pcmOrWav = Buffer.from(audioBase64, "base64");
+    if (pcmOrWav.length < 100) {
+      req.log.error({ audioBytes: pcmOrWav.length }, "Gemini TTS returned an empty or truncated audio payload");
+      res.status(502).json({ error: "Gemini returned an empty audio file." });
       return;
     }
+    const audio = pcmToWav(pcmOrWav);
+    req.log.info({
+      audioBytes: audio.length,
+      inputBytes: pcmOrWav.length,
+      wasAlreadyWav: audio === pcmOrWav,
+      sampleRate: 24_000,
+      channels: 1,
+      bitDepth: 16,
+    }, "Gemini TTS audio prepared for browser playback");
 
     res.setHeader("Content-Type", "audio/wav");
     res.setHeader("Cache-Control", "no-store");
@@ -225,7 +256,7 @@ router.get("/tts/voices", (_req, res) => {
     model: "gemini-3.8-flash-tts",
     endpoint: "https://generativelanguage.googleapis.com/v1beta/interactions",
     configured: Boolean(process.env["GEMINI_API_KEY"] ?? process.env["GEMINI API KEY"]),
-    audioFormat: "audio/wav",
+    audioFormat: "audio/wav (24 kHz, mono, 16-bit PCM)",
     languages: Array.from(SUPPORTED_LANGUAGES),
     englishVoiceLanguageCode: "en-IN",
     englishVoices: { female: "Kore", male: "Puck" },
