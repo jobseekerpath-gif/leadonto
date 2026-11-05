@@ -2,6 +2,38 @@ import { Router } from "express";
 
 const router = Router();
 
+// Default is Google's current Gemini TTS model. Set GEMINI_TTS_MODEL to
+// "gemini-3.8-flash-lite-tts" to trade a little quality for lower latency.
+const TTS_MODEL = process.env["GEMINI_TTS_MODEL"]?.trim() || "gemini-3.8-flash-tts";
+const PROVIDER_TIMEOUT_MS = 25_000;
+
+// Small in-memory cache: greetings, fallbacks and repeated prompts are spoken
+// again and again, and a cache hit answers in milliseconds instead of seconds.
+const AUDIO_CACHE_MAX_ENTRIES = 60;
+const AUDIO_CACHE_MAX_BYTES = 40 * 1024 * 1024;
+const audioCache = new Map<string, Buffer>();
+let audioCacheBytes = 0;
+
+function cacheGet(key: string): Buffer | undefined {
+  const hit = audioCache.get(key);
+  if (hit) { audioCache.delete(key); audioCache.set(key, hit); }
+  return hit;
+}
+
+function cacheSet(key: string, audio: Buffer): void {
+  if (audio.length > AUDIO_CACHE_MAX_BYTES / 4) return;
+  const existing = audioCache.get(key);
+  if (existing) { audioCacheBytes -= existing.length; audioCache.delete(key); }
+  audioCache.set(key, audio);
+  audioCacheBytes += audio.length;
+  while (audioCache.size > AUDIO_CACHE_MAX_ENTRIES || audioCacheBytes > AUDIO_CACHE_MAX_BYTES) {
+    const oldest = audioCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    audioCacheBytes -= audioCache.get(oldest)!.length;
+    audioCache.delete(oldest);
+  }
+}
+
 const CHARACTER_GENDER: Record<string, "female" | "male"> = {
   priya: "female", rohit: "male", maya: "female", arjun: "male",
   neha: "female", rahul: "male", ananya: "female", priya_coach: "female",
@@ -177,6 +209,18 @@ router.post("/tts", async (req, res) => {
     : (CHARACTER_GENDER[character] ?? "female");
   const voice = CHARACTER_VOICE[character] ?? (requestedGender === "male" ? "Puck" : "Kore");
 
+  const cacheKey = `${TTS_MODEL}|${voice}|${language}|${cleaned}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) {
+    res.setHeader("Content-Type", "audio/wav");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Length", cached.length);
+    res.setHeader("Server-Timing", "tts;desc=cache;dur=0");
+    res.end(cached);
+    return;
+  }
+
+  const startedAt = Date.now();
   try {
     const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
       method: "POST",
@@ -185,7 +229,7 @@ router.post("/tts", async (req, res) => {
         "x-goog-api-key": apiKey,
       },
       body: JSON.stringify({
-        model: "gemini-3.8-flash-tts",
+        model: TTS_MODEL,
         input: [{
           type: "user_input",
           content: [{
@@ -202,7 +246,7 @@ router.post("/tts", async (req, res) => {
           speech_config: [{ voice }],
         },
       }),
-      signal: AbortSignal.timeout(90000),
+      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
 
     const payload = await response.json().catch(() => ({})) as any;
@@ -238,9 +282,13 @@ router.post("/tts", async (req, res) => {
       bitDepth: 16,
     }, "Gemini TTS audio prepared for browser playback");
 
+    const providerMs = Date.now() - startedAt;
+    req.log.info({ providerMs, model: TTS_MODEL, chars: cleaned.length }, "Gemini TTS latency");
+    cacheSet(cacheKey, audio);
     res.setHeader("Content-Type", "audio/wav");
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Length", audio.length);
+    res.setHeader("Server-Timing", `tts;desc=provider;dur=${providerMs}`);
     res.end(audio);
   } catch (err) {
     req.log.error({ err, language, voiceStyle }, "Gemini TTS request failed");
@@ -253,7 +301,7 @@ router.post("/tts", async (req, res) => {
 router.get("/tts/voices", (_req, res) => {
   res.json({
     provider: "google-gemini",
-    model: "gemini-3.8-flash-tts",
+    model: TTS_MODEL,
     endpoint: "https://generativelanguage.googleapis.com/v1beta/interactions",
     configured: Boolean(process.env["GEMINI_API_KEY"] ?? process.env["GEMINI API KEY"]),
     audioFormat: "audio/wav (24 kHz, mono, 16-bit PCM)",

@@ -216,6 +216,41 @@ export function useMouthLevel(active: boolean): MouthLevel {
 // so a superseded utterance can never resume playback or fire a stray onEnd.
 let _speakGen = 0;
 
+// One-ahead prefetch: while sentence N plays, sentence N+1's audio is already
+// being synthesised, so there is no dead air between sentences.
+type Prefetched = { key: string; ctrl: AbortController; request: Promise<Response>; timer: ReturnType<typeof setTimeout> };
+let _prefetched: Prefetched | null = null;
+const TTS_REQUEST_TIMEOUT_MS = 12_000;
+
+function ttsRequest(chunk: { text: string; language: string }, gender: "male" | "female", options: { voiceStyle?: string; nativeLanguage?: string }, signal: AbortSignal): Promise<Response> {
+  return fetch(`${BASE}/api/tts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      text: chunk.text, language: chunk.language, gender,
+      voiceStyle: options.voiceStyle, nativeLanguage: options.nativeLanguage,
+    }),
+    signal,
+  });
+}
+
+function clearPrefetch() {
+  if (!_prefetched) return;
+  clearTimeout(_prefetched.timer);
+  _prefetched.ctrl.abort();
+  _prefetched = null;
+}
+
+function startPrefetch(key: string, chunk: { text: string; language: string }, gender: "male" | "female", options: { voiceStyle?: string; nativeLanguage?: string }) {
+  clearPrefetch();
+  const ctrl = new AbortController();
+  const request = ttsRequest(chunk, gender, options, ctrl.signal);
+  request.catch(() => undefined); // a failed prefetch is handled when it is taken
+  const timer = setTimeout(() => ctrl.abort(), TTS_REQUEST_TIMEOUT_MS);
+  _prefetched = { key, ctrl, request, timer };
+}
+
 // Reused across chunks/utterances rather than spun up per-clip — browsers cap
 // concurrent AudioContexts, and decoding doesn't need the "unlocked" one above.
 let _decodeCtx: AudioContext | null = null;
@@ -377,6 +412,7 @@ function globalStop() {
   _queueActive = false;
   _abort?.abort();
   _abort = null;
+  clearPrefetch();
   const browserUtterance = _browserUtterance;
   _browserUtterance = null;
   if (browserUtterance && typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -512,17 +548,19 @@ function playChunkChain(
   const chunk = chunks[index]!;
   const chunkText = chunk.text;
   const language = chunk.language;
-  const ctrl = new AbortController();
+  const prefetchKey = `${myGen}:${index}:${chunkText}`;
+  const taken = _prefetched && _prefetched.key === prefetchKey ? _prefetched : null;
+  if (taken) { clearTimeout(taken.timer); _prefetched = null; }
+  const ctrl = taken?.ctrl ?? new AbortController();
   _abort = ctrl;
-  // Gemini TTS may take longer on a cold start or during provider congestion.
-  // Keep this below the server's 90s provider timeout, but do not abort valid
-  // WAV generation after only 12 seconds.
+  // Never leave the learner in silence: if the voice service has not answered
+  // within the budget, abort and let the browser voice take over.
   const hangTimer = setTimeout(() => {
     if (_abort === ctrl) {
-      console.error("[TTS] Google TTS request timed out after 30 seconds");
+      console.error(`[TTS] Google TTS request timed out after ${TTS_REQUEST_TIMEOUT_MS / 1000} seconds`);
       ctrl.abort();
     }
-  }, 20_000);
+  }, TTS_REQUEST_TIMEOUT_MS);
   const next = () => playChunkChain(chunks, index + 1, myGen, gender, options, onAllDone);
   const useFallbackThenNext = () => {
     if (myGen !== _speakGen) return;
@@ -538,16 +576,7 @@ function playChunkChain(
     return true;
   };
 
-  fetch(`${BASE}/api/tts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({
-      text: chunkText, language, gender,
-      voiceStyle: options.voiceStyle, nativeLanguage: options.nativeLanguage,
-    }),
-    signal: ctrl.signal,
-  })
+  (taken?.request ?? ttsRequest(chunk, gender, options, ctrl.signal))
     .then(async (res) => {
       clearTimeout(hangTimer);
       if (myGen !== _speakGen) return;
@@ -594,6 +623,11 @@ function playChunkChain(
         if (retry()) return;
         useFallbackThenNext();
         return;
+      }
+
+      if (index + 1 < chunks.length) {
+        const nextChunk = chunks[index + 1]!;
+        startPrefetch(`${myGen}:${index + 1}:${nextChunk.text}`, nextChunk, gender, options);
       }
 
       const url = URL.createObjectURL(blob);
