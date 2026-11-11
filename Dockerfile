@@ -12,6 +12,10 @@ RUN pnpm --filter "./artifacts/edubharat" run build
 FROM node:20-slim
 WORKDIR /app
 
+# Microsoft Edge neural TTS fallback (no API key or cloud billing).
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv && python3 -m venv /opt/edge-tts && /opt/edge-tts/bin/pip install --no-cache-dir edge-tts && rm -rf /var/lib/apt/lists/*
+ENV EDGE_TTS_PYTHON=/opt/edge-tts/bin/python
+
 COPY --from=builder /app/artifacts/api-server/dist ./artifacts/api-server/dist
 COPY --from=builder /app/artifacts/edubharat/dist/public ./artifacts/api-server/dist/public
 COPY --from=builder /app/node_modules ./node_modules
