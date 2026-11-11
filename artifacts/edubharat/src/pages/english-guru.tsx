@@ -917,7 +917,8 @@ function EnglishGuruContent({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     const el = convScrollRef.current;
     if (!el) return;
-    el.scrollTop = 0;
+    // Keep the conversation in natural reading order and reveal the newest turn.
+    el.scrollTop = el.scrollHeight;
   }, [convHistory, aiText, isStreaming]);
 
   useEffect(() => {
@@ -2439,7 +2440,7 @@ Rules for spoken replies:
                       </div>
                     </div>
                   )}
-                  {[...convHistory].reverse().map((msg, i) => (
+                  {convHistory.map((msg, i) => (
                     <div key={i} className={`flex min-w-0 gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                       <div className={`min-w-0 max-w-[90%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-secondary"}`}>
                          {msg.role === "user"
